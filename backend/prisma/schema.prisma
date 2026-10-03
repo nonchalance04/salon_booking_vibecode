@@ -1,0 +1,542 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  CASHIER
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String
+  role         UserRole
+  firstName    String
+  lastName     String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  paymentsRecorded   Payment[] @relation("PaymentRecordedBy")
+  paymentsReconciled Payment[] @relation("PaymentReconciledBy")
+
+  salonClosuresCreated                SalonClosure[]
+  staffUnavailabilities               StaffUnavailability[]
+  bookingPolicyVersionCreated         BookingPolicyVersion[]
+  appointmentsCompleted               Appointment[]
+  appointmentServiceOutcomesFinalized AppointmentService[]
+  rescheduleHistoryActions            AppointmentRescheduleHistory[]
+  receiptsIssued                      Receipt[]
+  commissionRecordsFinalized          CommissionRecord[]
+  auditLogs                           AuditLog[]
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  firstName String
+  lastName  String
+  phone     String
+  email     String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  appointments             Appointment[]
+  rescheduleHistoryActions AppointmentRescheduleHistory[]
+  auditLogs                AuditLog[]
+  notifications            NotificationQueue[]
+}
+
+model Staff {
+  id        String   @id @default(uuid()) @db.Uuid
+  firstName String
+  lastName  String
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  staffServices       StaffService[]
+  schedules           StaffSchedule[]
+  unavailabilities    StaffUnavailability[]
+  appointmentServices AppointmentService[]
+  commissionRecords   CommissionRecord[]
+}
+
+model Service {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  description     String?
+  price           Decimal  @db.Decimal(12, 2)
+  durationMinutes Int
+  bufferMinutes   Int?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  staffServices       StaffService[]
+  appointmentServices AppointmentService[]
+}
+
+model StaffService {
+  id             String   @id @default(uuid()) @db.Uuid
+  staffId        String   @db.Uuid
+  serviceId      String   @db.Uuid
+  commissionRate Decimal  @db.Decimal(5, 4)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  staff   Staff   @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@unique([staffId, serviceId])
+  @@index([staffId, isActive])
+  @@index([serviceId, isActive])
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model SalonOperatingHour {
+  id        String    @id @default(uuid()) @db.Uuid
+  dayOfWeek DayOfWeek
+  openTime  DateTime  @db.Time(0)
+  closeTime DateTime  @db.Time(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+}
+
+model SalonClosure {
+  id              String   @id @default(uuid()) @db.Uuid
+  startsAt        DateTime @db.Timestamptz(3)
+  endsAt          DateTime @db.Timestamptz(3)
+  reason          String?
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([startsAt, endsAt])
+}
+
+model StaffSchedule {
+  id            String    @id @default(uuid()) @db.Uuid
+  staffId       String    @db.Uuid
+  dayOfWeek     DayOfWeek
+  startTime     DateTime  @db.Time(0)
+  endTime       DateTime  @db.Time(0)
+  effectiveFrom DateTime? @db.Date
+  effectiveTo   DateTime? @db.Date
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Restrict)
+
+  @@index([staffId, dayOfWeek])
+}
+
+model StaffUnavailability {
+  id              String   @id @default(uuid()) @db.Uuid
+  staffId         String   @db.Uuid
+  startsAt        DateTime @db.Timestamptz(3)
+  endsAt          DateTime @db.Timestamptz(3)
+  reason          String?
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  staff     Staff @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  createdBy User  @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([staffId, startsAt, endsAt])
+}
+
+enum AppointmentFeeType {
+  FIXED
+  PERCENTAGE
+}
+
+model BookingPolicyVersion {
+  id                        String             @id @default(uuid()) @db.Uuid
+  version                   Int                @unique
+  appointmentFeeType        AppointmentFeeType
+  appointmentFeeAmount      Decimal            @db.Decimal(12, 2)
+  bookingHoldMinutes        Int
+  defaultBufferMinutes      Int
+  maxReschedules            Int
+  rescheduleCutoffHours     Int
+  cancellationCutoffHours   Int
+  noShowGraceHours          Int
+  advanceBookingDays        Int
+  minimumBookingLeadMinutes Int
+  effectiveFrom             DateTime           @unique @db.Timestamptz(3)
+  createdByUserId           String             @db.Uuid
+  createdAt                 DateTime           @default(now()) @db.Timestamptz(3)
+
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  appointments Appointment[]
+}
+
+enum AppointmentStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  EXPIRED
+}
+
+enum AppointmentCompletionType {
+  SERVICE_SETTLEMENT
+  NO_SERVICE_CLOSURE
+}
+
+model Appointment {
+  id                             String                     @id @default(uuid()) @db.Uuid
+  bookingCode                    String                     @unique
+  customerId                     String                     @db.Uuid
+  bookingPolicyVersionId         String                     @db.Uuid
+  status                         AppointmentStatus
+  startAt                        DateTime                   @db.Timestamptz(3)
+  endAt                          DateTime                   @db.Timestamptz(3)
+  appointmentFeeAmount           Decimal                    @db.Decimal(12, 2)
+  holdExpiresAt                  DateTime?                  @db.Timestamptz(3)
+  rescheduleCount                Int                        @default(0)
+  guestAccessTokenHash           String
+  confirmedAt                    DateTime?                  @db.Timestamptz(3)
+  cancelledAt                    DateTime?                  @db.Timestamptz(3)
+  noShowAt                       DateTime?                  @db.Timestamptz(3)
+  noShowGraceExpiresAt           DateTime?                  @db.Timestamptz(3)
+  completedAt                    DateTime?                  @db.Timestamptz(3)
+  completionType                 AppointmentCompletionType?
+  completedByUserId              String?                    @db.Uuid
+  recoveryOfAppointmentId        String?                    @unique @db.Uuid
+  createdAt                      DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt                      DateTime                   @updatedAt @db.Timestamptz(3)
+  carriedAppointmentFeePaymentId String?                    @unique @db.Uuid
+
+  customer             Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  bookingPolicyVersion BookingPolicyVersion @relation(fields: [bookingPolicyVersionId], references: [id], onDelete: Restrict)
+  completedByUser      User?                @relation(fields: [completedByUserId], references: [id], onDelete: Restrict)
+
+  recoveryOfAppointment Appointment? @relation("AppointmentRecovery", fields: [recoveryOfAppointmentId], references: [id], onDelete: Restrict)
+
+  recoveryAppointment Appointment? @relation("AppointmentRecovery")
+
+  appointmentServices AppointmentService[]
+  rescheduleHistory   AppointmentRescheduleHistory[]
+  commissionRecords   CommissionRecord[]
+  notifications       NotificationQueue[]
+
+  payments Payment[] @relation("AppointmentPayments")
+
+  carriedAppointmentFeePayment Payment? @relation("CarriedAppointmentFeePayment", fields: [carriedAppointmentFeePaymentId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([customerId])
+  @@index([startAt])
+  @@index([holdExpiresAt])
+  @@index([bookingPolicyVersionId])
+}
+
+enum StaffAssignmentMode {
+  SPECIFIC
+  ANY_AVAILABLE
+}
+
+enum AppointmentServiceMembershipStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum AppointmentServiceOutcome {
+  SCHEDULED
+  PERFORMED
+  NOT_PERFORMED
+}
+
+model AppointmentService {
+  id            String @id @default(uuid()) @db.Uuid
+  appointmentId String @db.Uuid
+  serviceId     String @db.Uuid
+  staffId       String @db.Uuid
+
+  assignmentMode   StaffAssignmentMode
+  membershipStatus AppointmentServiceMembershipStatus @default(ACTIVE)
+  sequenceNo       Int
+  commissionRecord CommissionRecord?
+
+  serviceNameSnapshot     String
+  priceSnapshot           Decimal @db.Decimal(12, 2)
+  durationMinutesSnapshot Int
+  bufferMinutesSnapshot   Int
+  commissionRateSnapshot  Decimal @db.Decimal(5, 4)
+
+  scheduledStartAt DateTime @db.Timestamptz(3)
+  scheduledEndAt   DateTime @db.Timestamptz(3)
+  reservedUntilAt  DateTime @db.Timestamptz(3)
+
+  outcome                  AppointmentServiceOutcome @default(SCHEDULED)
+  actualChargedAmount      Decimal?                  @db.Decimal(12, 2)
+  outcomeFinalizedAt       DateTime?                 @db.Timestamptz(3)
+  outcomeFinalizedByUserId String?                   @db.Uuid
+
+  removedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  appointment            Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  service                Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staff                  Staff       @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  outcomeFinalizedByUser User?       @relation(fields: [outcomeFinalizedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([appointmentId, membershipStatus])
+  @@index([staffId, membershipStatus, scheduledStartAt])
+  @@index([staffId, membershipStatus, reservedUntilAt])
+}
+
+enum RescheduleEventType {
+  ORDINARY_RESCHEDULE
+  NO_SHOW_RECOVERY_CREATED
+}
+
+enum ActorType {
+  ADMIN
+  CASHIER
+  CUSTOMER
+  SYSTEM
+}
+
+model AppointmentRescheduleHistory {
+  id                    String              @id @default(uuid()) @db.Uuid
+  appointmentId         String              @db.Uuid
+  eventType             RescheduleEventType
+  rescheduleNumber      Int
+  snapshotSchemaVersion Int
+  actorType             ActorType
+  actorUserId           String?             @db.Uuid
+  actorCustomerId       String?             @db.Uuid
+  beforeSnapshot        Json
+  afterSnapshot         Json
+  reason                String?
+  createdAt             DateTime            @default(now()) @db.Timestamptz(3)
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  actorUser     User?       @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  actorCustomer Customer?   @relation(fields: [actorCustomerId], references: [id], onDelete: Restrict)
+
+  @@unique([appointmentId, rescheduleNumber])
+  @@index([appointmentId, createdAt])
+}
+
+enum PaymentType {
+  APPOINTMENT_FEE
+  SERVICE_PAYMENT
+}
+
+enum PaymentMethod {
+  CASH
+  GCASH
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum PaymentReconciliationStatus {
+  NONE
+  REQUIRED
+  RESOLVED
+}
+
+model Payment {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  appointmentId        String                      @db.Uuid
+  type                 PaymentType
+  method               PaymentMethod
+  provider             String
+  status               PaymentStatus
+  amount               Decimal                     @db.Decimal(12, 2)
+  currency             String                      @default("PHP")
+  idempotencyKey       String                      @unique
+  externalReference    String?
+  satisfiesObligation  Boolean                     @default(false)
+  recordedByUserId     String?                     @db.Uuid
+  paidAt               DateTime?                   @db.Timestamptz(3)
+  failedAt             DateTime?                   @db.Timestamptz(3)
+  refundedAt           DateTime?                   @db.Timestamptz(3)
+  reconciliationStatus PaymentReconciliationStatus @default(NONE)
+  reconciliationReason String?                     @db.Text
+  reconciledAt         DateTime?                   @db.Timestamptz(3)
+  reconciledByUserId   String?                     @db.Uuid
+  metadata             Json?
+  createdAt            DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                    @updatedAt @db.Timestamptz(3)
+  receipt              Receipt?
+
+  commissionRecords CommissionRecord[]
+
+  appointment Appointment @relation("AppointmentPayments", fields: [appointmentId], references: [id], onDelete: Restrict)
+
+  recordedBy User? @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  reconciledBy User? @relation("PaymentReconciledBy", fields: [reconciledByUserId], references: [id], onDelete: Restrict)
+
+  carriedByAppointment Appointment? @relation("CarriedAppointmentFeePayment")
+
+  @@unique([provider, externalReference])
+  @@index([appointmentId, type])
+  @@index([status])
+  @@index([reconciliationStatus])
+}
+
+model Receipt {
+  id              String   @id @default(uuid()) @db.Uuid
+  paymentId       String   @unique @db.Uuid
+  receiptNumber   String   @unique
+  issuedByUserId  String   @db.Uuid
+  receiptSnapshot Json
+  issuedAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  payment  Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  issuedBy User    @relation(fields: [issuedByUserId], references: [id], onDelete: Restrict)
+}
+
+model CommissionRecord {
+  id                   String @id @default(uuid()) @db.Uuid
+  appointmentId        String @db.Uuid
+  appointmentServiceId String @unique @db.Uuid
+  staffId              String @db.Uuid
+  sourcePaymentId      String @db.Uuid
+
+  serviceAmount           Decimal @db.Decimal(12, 2)
+  allocatedAppointmentFee Decimal @db.Decimal(12, 2)
+  commissionBase          Decimal @db.Decimal(12, 2)
+  commissionRate          Decimal @db.Decimal(5, 4)
+  commissionAmount        Decimal @db.Decimal(12, 2)
+
+  finalizedByUserId String   @db.Uuid
+  finalizedAt       DateTime @db.Timestamptz(3)
+
+  appointment        Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  appointmentService AppointmentService @relation(fields: [appointmentServiceId], references: [id], onDelete: Restrict)
+  staff              Staff              @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  sourcePayment      Payment            @relation(fields: [sourcePaymentId], references: [id], onDelete: Restrict)
+  finalizedBy        User               @relation(fields: [finalizedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([staffId, finalizedAt])
+  @@index([appointmentId])
+}
+
+model AuditLog {
+  id              String    @id @default(uuid()) @db.Uuid
+  actorType       ActorType
+  actorUserId     String?   @db.Uuid
+  actorCustomerId String?   @db.Uuid
+
+  action     String
+  entityType String
+  entityId   String
+
+  beforeData Json?
+  afterData  Json?
+
+  ipAddress String?
+  userAgent String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  actorUser     User?     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  actorCustomer Customer? @relation(fields: [actorCustomerId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+enum NotificationEventType {
+  BOOKING_CONFIRMED
+  BOOKING_RESCHEDULED
+  BOOKING_CANCELLED
+  NO_SHOW_RECOVERY_CREATED
+  PAYMENT_RECEIVED
+  APPOINTMENT_COMPLETED
+  APPOINTMENT_REMINDER
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model NotificationQueue {
+  id            String  @id @default(uuid()) @db.Uuid
+  appointmentId String? @db.Uuid
+  customerId    String? @db.Uuid
+
+  eventType NotificationEventType
+  channel   NotificationChannel
+  recipient String
+  payload   Json
+
+  status       NotificationStatus
+  attemptCount Int                @default(0)
+
+  scheduledAt DateTime  @db.Timestamptz(3)
+  sentAt      DateTime? @db.Timestamptz(3)
+  lastError   String?   @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([status, scheduledAt])
+}
+
+model SalonProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  address   String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}

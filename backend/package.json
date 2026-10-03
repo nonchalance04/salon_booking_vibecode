@@ -1,0 +1,47 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:db": "node --import tsx --test tests/integration/*.test.ts",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/src/server.js",
+    "build": "npm run db:generate && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "db:validate": "prisma validate --config prisma7.config.ts",
+    "db:generate": "prisma generate --config prisma7.config.ts",
+    "db:migrate": "prisma migrate deploy --config prisma7.config.ts",
+    "db:status": "prisma migrate status --config prisma7.config.ts",
+    "db:seed": "prisma db seed --config prisma7.config.ts",
+    "check": "npm run db:validate && npm run db:generate && npm run typecheck && npm test && npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
+    "prisma": "^7.10.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "jose": "^6.2.12",
+    "pg": "^8.23.1",
+    "zod": "^4.6.5"
+  }
+}
