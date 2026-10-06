@@ -3,7 +3,9 @@ import { once } from "node:events";
 import { test } from "node:test";
 import express from "express";
 import { z } from "zod";
-import { app } from "../src/app/app.js";
+import { app, createApp } from "../src/app/app.js";
+import { createApiRouter } from "../src/app/routes.js";
+import type { PrismaClient } from "../generated/prisma/client.js";
 import { parseEnv } from "../src/config/env.schema.js";
 import { errorHandler, requestContext, validateRequest } from "../src/shared/http.js";
 
@@ -104,4 +106,16 @@ test("environment validation rejects invalid configuration without disclosing va
       return true;
     });
   }
+});
+
+test("readiness reports database failure safely while liveness stays available", async () => {
+  const config = parseEnv({ DATABASE_URL: "postgresql://localhost/test", JWT_SECRET: "a".repeat(32) });
+  const database = { $queryRaw: async () => { throw new Error("database-password-secret"); } } as unknown as PrismaClient;
+  await withServer(createApp(createApiRouter(database, config)), async url => {
+    const ready = await fetch(`${url}/api/ready`);
+    assert.equal(ready.status, 503);
+    assert.equal(ready.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await ready.json(), { status: "unavailable" });
+    assert.equal((await fetch(`${url}/api/health`)).status, 200);
+  });
 });

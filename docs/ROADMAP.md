@@ -7,12 +7,17 @@ This document controls implementation sequence. Business behavior remains govern
 Planning does not authorize automatic implementation of subsequent tasks. Each
 implementation task requires explicit instruction; stop after its agreed scope.
 
-## Current position — 2026-10-03
+## Current position — 2026-10-05
 
-**Phase 2 complete: authentication, access control, account management, and the
-frontend login/workspace shell are implemented and verified. Phase 3 is next.**
+**Phase 11 local acceptance and deployment preparation are implemented and verified
+in part. 48 unit/API tests and 100 database results pass. Browser workflows, receipt
+layout fixes, first-Admin bootstrap and local backup restoration are verified.
+The user selected local preparation because no hosting target is selected. Live
+deployment, provider/printer acceptance, remote CI and salon sign-off remain open;
+Phase 11 is not complete. See `PHASE_11_VERIFICATION.md` and `ACCEPTANCE_BACKLOG.md`.**
 
-See `FOUNDATION_VERIFICATION.md` and `PHASE_2_VERIFICATION.md` for evidence and verification limits.
+See `FOUNDATION_VERIFICATION.md`, `PHASE_2_VERIFICATION.md`,
+`PHASE_3_VERIFICATION.md`, `PHASE_4_VERIFICATION.md`, `PHASE_5_VERIFICATION.md`, `PHASE_6_VERIFICATION.md`, `PHASE_7_VERIFICATION.md`, `PHASE_8_VERIFICATION.md`, `PHASE_9_VERIFICATION.md`, and `PHASE_10_VERIFICATION.md` for evidence and verification limits.
 
 This assessment is based on the current working tree, including uncommitted files,
 not just committed history. It does not certify a running database or deployment.
@@ -23,11 +28,19 @@ not just committed history. It does not certify a running database or deployment
 | Backend foundation | Express health API, environment/request validation, centralized errors, build scripts | Type checking, build, API tests, compiled startup, and clean shutdown pass |
 | Database foundation | Existing schema/migrations and development seed | Disposable PostgreSQL migration, seed, constraint, and transaction checks pass |
 | Authentication | Login/logout/current-user APIs, live database authorization, CSRF/CORS, Admin account management | Phase 2 complete; security tests pass |
-| Booking and business workflows | Models exist, but no corresponding application services or routes found | Not implemented |
-| Frontend | React/TypeScript/Vite login, Admin accounts, Cashier shell | Build and browser checks pass |
-| Automated tests | Node test runner, PostgreSQL integration suite, CI workflow | 7 unit/API tests and 14 database test results pass; remote CI execution not yet observed |
+| Salon configuration | Admin APIs/UI, public reads, transactional audit, reservation conflict validation | Phase 3 complete; database and browser checks pass |
+| Availability | Dynamic complete-plan API, staff assignment, customer selection screen | Phase 4 complete; unit, database, and browser checks pass |
+| Booking and guest access | Transactional booking API/UI, secure tokens, standalone expiration worker | Phase 5 complete; concurrency, security, database, and browser checks pass |
+| Appointment-fee payment | Manual/test/PayMongo providers, confirmation, receipts, reconciliation, expiration coordination | Phase 6 locally verified; user reports testing complete |
+| Appointment changes | Rescheduling, cancellation, Admin no-show marking, linked recovery and carried credit | Phase 7 API/database checks pass; frontend build passes |
+| Service settlement | Cashier outcomes/payment/closure, Admin corrections, receipts and commissions | Phase 8 automated checks pass; browser/print acceptance deferred |
+| Notifications | Provider adapters, independent worker, safe claims/retries and reminders | Phase 9 local checks pass; live-provider acceptance deferred |
+| Reports and customer assistance | Admin reports/dashboard/audit, Cashier collections, guided salon assistant | Phase 10 automated checks pass; browser acceptance deferred |
+| Frontend | React/TypeScript/Vite availability/booking/guest access, login, Admin accounts/configuration, Cashier payment workspace | Build passes; earlier browser smoke checks pass; Phase 7–8 browser acceptance deferred |
+| Automated tests | Node test runner, PostgreSQL integration suite, CI workflow | 48 unit/API tests and 100 full-regression database results pass, including Phase 11 bootstrap and concurrent HTTP workflow tests; remote CI execution not yet observed |
 
-Schema presence does not mean booking, payments, or reporting are functional.
+Booking creates unpaid holds; timely verified appointment-fee payment confirms them.
+Notification delivery runs independently; reports read historical transactions.
 The phase numbers below establish the implementation plan; the previous roadmap
 listed only initial repository setup.
 
@@ -74,7 +87,7 @@ direct API requests cannot bypass permissions. Stylists do not receive login acc
 
 ## Phase 3 — Salon configuration and management
 
-**Status:** Not started at the application level.
+**Status:** Complete; configuration APIs/UI, historical preservation, audit, and reservation coordination verified locally.
 
 - Implement salon profile, services, staff, qualifications, and commission-rate configuration.
 - Implement operating hours, closures, recurring staff schedules, and unavailable periods.
@@ -89,7 +102,7 @@ preservation, and locking behavior using reservation fixtures where needed.
 
 ## Phase 4 — Availability and staff assignment
 
-**Status:** Not started.
+**Status:** Complete; dynamic availability, staff assignment, public APIs/UI, and scheduling tests verified locally.
 
 - Calculate availability dynamically from hours, staff schedules, closures, unavailability, and blocking `AppointmentService` reservations.
 - Enforce full duration, buffers, sequential multi-service timing, qualification, local timezone, and policy boundaries.
@@ -103,7 +116,7 @@ that booking must revalidate them transactionally before reserving.
 
 ## Phase 5 — Booking, temporary holds, and guest access
 
-**Status:** Not started.
+**Status:** Complete; booking transactions, concurrency, guest API/UI, and expiration worker verified locally.
 
 - Implement authoritative booking logic in the appointments application service, with `AppointmentService` rows as the reservation unit.
 - Create customer/contact data, appointment, service snapshots, booking code, and hashed guest-access token atomically.
@@ -112,6 +125,8 @@ that booking must revalidate them transactionally before reserving.
 - Create `PENDING_PAYMENT` appointments and implement hold-expiration cleanup.
 - Add customer booking submission, secure appointment retrieval, and hold/countdown UI.
 - Add audit/outbox records within the corresponding transactions from this phase onward.
+  Hold creation/expiration are audited; the existing event enum has no notification
+  for these transitions. Confirmation/payment outbox records begin with Phase 6.
 
 **Exit condition:** Competing requests cannot double-book a staff interval; guest access
 requires the secure token rather than a booking code alone. Tests cover booking versus
@@ -119,7 +134,8 @@ configuration changes, policy activation, transaction restarts, and deadline cro
 
 ## Phase 6 — Appointment-fee payment and confirmation
 
-**Status:** Not started.
+**Status:** Implemented and verified locally. User reported testing complete on 2026-10-04 and authorized Phase 7; provider diagnostics remain available for future follow-up.
+See `PHASE_6_VERIFICATION.md` and the README PayMongo setup instructions.
 
 - Implement the payment-provider boundary, authorized manual recording, and a development/test adapter.
 - Integrate the selected online provider when merchant access and credentials are available; disable test providers in production.
@@ -134,7 +150,8 @@ duplicate, late, and racing events cannot corrupt reservations or collection tot
 
 ## Phase 7 — Appointment changes and no-show recovery
 
-**Status:** Not started.
+**Status:** Implemented; unit/API and database checks pass, including concurrency. Frontend build passes; interactive browser acceptance remains unexecuted for this phase.
+See `PHASE_7_VERIFICATION.md`.
 
 - Implement eligible customer rescheduling and cancellation with the appointment's governing policy.
 - Preserve retained snapshots, snapshot newly added services, retain removed rows, and record complete change history.
@@ -148,7 +165,7 @@ are enforced. Tests include competing reschedules/bookings and concurrent credit
 
 ## Phase 8 — Service outcomes, settlement, receipts, and commissions
 
-**Status:** Not started.
+**Status:** Implemented; automated checks pass. Manual browser/printing acceptance is deferred at the user's request; see `PHASE_8_VERIFICATION.md` and `ACCEPTANCE_BACKLOG.md`.
 
 - Implement Cashier outcome recording and permitted Admin corrections before finalization.
 - Settle all performed services through exactly one successful full `SERVICE_PAYMENT`.
@@ -164,7 +181,9 @@ are covered by transaction and authorization tests.
 
 ## Phase 9 — Notification delivery and reminders
 
-**Status:** Not started. Earlier phases already enqueue required events.
+**Status:** Implemented and verified locally. Existing outbox events are delivered by
+an independent worker; Resend/Twilio live acceptance awaits credentials and sender
+setup. See `PHASE_9_VERIFICATION.md` and `ACCEPTANCE_BACKLOG.md`.
 
 - Implement email/SMS provider boundaries and the PostgreSQL-backed notification worker.
 - Atomically claim work, use bounded processing leases, recover abandoned attempts, and reject stale-worker updates.
@@ -176,7 +195,9 @@ cannot own the same live attempt, and worker crashes have tested recovery paths.
 
 ## Phase 10 — Reports and customer assistance
 
-**Status:** Not started.
+**Status:** Implemented with a guided assistant; automated checks pass. External AI is
+not configured. Browser acceptance is deferred; see `PHASE_10_VERIFICATION.md` and
+`ACCEPTANCE_BACKLOG.md` A10.
 
 - Implement authorized appointment, payment, receipt, commission, and permitted collection reports using historical transactional records.
 - Prevent carried credits, duplicate callbacks, and reconciliation cases from distorting reported collections.
@@ -189,7 +210,7 @@ availability or bypass booking/payment rules. No new accounting or chatbot-histo
 
 ## Phase 11 — End-to-end acceptance and deployment
 
-**Status:** Not started. Testing remains required throughout every earlier phase.
+**Status:** In progress; local release tooling, automated acceptance and representative browser workflows verified. Hosting/provider/printer/CI/salon release gates remain open. See `PHASE_11_VERIFICATION.md`.
 
 - Run complete guest, Admin, and Cashier workflows across the integrated frontend/backend.
 - Repeat critical concurrency and security scenarios against PostgreSQL under realistic simultaneous requests.
@@ -203,9 +224,13 @@ backup restoration is demonstrated, and the deployed application can be operated
 
 ## Next implementation task
 
-**Phase 3 — Salon configuration and management** is the next milestone. Phase 2
-is complete, and work has stopped at that boundary. Proceed with Phase 3 only
-when the user requests it; do not jump directly into booking.
+**Finish Phase 11 release acceptance.**
+
+Local preparation was authorized and delivered. Review `PHASE_11_VERIFICATION.md`
+and the remaining entries in `ACCEPTANCE_BACKLOG.md`; complete actual printer/device
+and salon acceptance, select a deployment host/domain, then validate production
+providers, HTTPS/process supervision, off-host backups/recovery and remote CI for
+the reviewed release. Do not advance to new feature scope automatically.
 
 ## Scope boundaries and completion tracking
 

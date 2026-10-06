@@ -1,0 +1,14 @@
+import type { parseEnv } from "../../config/env.schema.js";
+import { createResendProvider, createTestNotificationProvider, createTwilioProvider, type NotificationProvider } from "./notification-provider.js";
+
+export function configuredNotificationProviders(env: ReturnType<typeof parseEnv>) {
+  const providers: Partial<Record<"EMAIL" | "SMS", NotificationProvider>> = {};
+  // Test delivery logs only the queue identity and channel, never message/contact data.
+  const test = createTestNotificationProvider(message => console.info(JSON.stringify({ event: "notification_test_accepted", id: message.id, channel: message.channel })));
+  if (env.NODE_ENV === "production" && (env.NOTIFICATION_EMAIL_PROVIDER === "test" || env.NOTIFICATION_SMS_PROVIDER === "test")) throw new Error("Test notifications are unavailable in production.");
+  if (env.NOTIFICATION_EMAIL_PROVIDER === "test") providers.EMAIL = test;
+  if (env.NOTIFICATION_SMS_PROVIDER === "test") providers.SMS = test;
+  if (env.NOTIFICATION_EMAIL_PROVIDER === "resend") providers.EMAIL = createResendProvider(env.RESEND_API_KEY!, env.NOTIFICATION_EMAIL_FROM!);
+  if (env.NOTIFICATION_SMS_PROVIDER === "twilio") providers.SMS = createTwilioProvider(env.TWILIO_ACCOUNT_SID!, env.TWILIO_AUTH_TOKEN!, env.TWILIO_MESSAGING_SERVICE_SID!);
+  return providers;
+}

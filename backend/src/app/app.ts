@@ -5,7 +5,9 @@ export function createApp(routes?: express.Router) {
   const app = express();
   app.disable("x-powered-by");
   app.use(requestContext);
-  app.use(express.json({ limit: "100kb" }));
+  app.use(express.json({ limit: "100kb", verify: (req, _res, buffer) => {
+    (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+  } }));
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", message: "Salon backend is running." });
   });

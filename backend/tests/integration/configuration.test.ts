@@ -19,6 +19,8 @@ import { ApiError } from "../../src/shared/http.js";
 import { days } from "../../src/modules/configuration/configuration.schema.js";
 import { SALON_COORDINATION_KEY, freshTime } from "../../src/modules/scheduling/coordination.js";
 
+import { createAvailabilityService } from "../../src/modules/availability/availability.service.js";
+
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
 if (!adminUrl) throw new Error("TEST_DATABASE_ADMIN_URL is required for disposable PostgreSQL tests.");
 const dbName = `salon_test_${randomUUID().replaceAll("-", "")}`;
@@ -244,5 +246,87 @@ test("public APIs expose only public configuration; Admin API enforces roles, CS
     const f = await fixture();
     const conflict = await request("/configuration/closures", "POST", adminCookie, { startsAt: f.startAt.toISOString(), endsAt: f.reservedUntilAt.toISOString(), reason: null });
     assert.equal(conflict.status, 409); assert.ok((await conflict.json()).error.details.appointments.some((a: { appointmentId: string }) => a.appointmentId === f.booking.id));
+  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+});
+
+
+// Phase 4 uses the same isolated database and reservation fixtures to verify
+// the boundary between configuration coordination and advisory reads.
+test("availability uses persisted blocking states, public data and effective policy without creating reservations", async () => {
+  const f = await fixture();
+  const availability = createAvailabilityService(prisma, "Asia/Manila");
+  const date = Temporal.Instant.fromEpochMilliseconds(+f.startAt).toZonedDateTimeISO("Asia/Manila").toPlainDate().toString();
+  const input = { date, startAt: f.startAt.toISOString(), services: [{ serviceId: f.item.id, assignmentMode: "SPECIFIC" as const, staffId: f.staff.id }] };
+  const before = await prisma.appointment.count();
+  assert.equal((await availability.search(input)).slots.length, 0);
+  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "COMPLETED" } });
+  assert.equal((await availability.search(input)).slots.length, 0);
+  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "PENDING_PAYMENT", holdExpiresAt: new Date(Date.now() - 1) } });
+  const result = await availability.search(input);
+  assert.equal(result.slots.length, 1); assert.equal(result.advisory, true);
+  assert.equal(result.slots[0]!.services[0]!.bufferMinutes, 15);
+  const policy = await prisma.bookingPolicyVersion.findFirstOrThrow({ where: { effectiveFrom: { lte: new Date(result.generatedAt) } }, orderBy: { effectiveFrom: "desc" } });
+  assert.equal(result.policyVersion, policy.version);
+  assert.equal(await prisma.appointment.count(), before);
+  assert.ok(!JSON.stringify(result).includes("commissionRate"));
+  assert.ok(!JSON.stringify(result).includes(f.booking.bookingCode));
+  const people = await availability.catalog();
+  assert.ok(people.staff.some(s => s.id === f.staff.id && s.serviceIds.includes(f.item.id)));
+  assert.ok(!JSON.stringify(people).includes("phone"));
+  await prisma.staffService.update({ where: { id: f.qualification.id }, data: { isActive: false } });
+  assert.equal((await availability.search(input)).slots.length, 0);
+  await prisma.staffService.update({ where: { id: f.qualification.id }, data: { isActive: true } });
+  await prisma.staff.update({ where: { id: f.staff.id }, data: { isActive: false } });
+  assert.equal((await availability.search(input)).slots.length, 0);
+  assert.ok(!(await availability.catalog()).staff.some(s => s.id === f.staff.id));
+  await prisma.staff.update({ where: { id: f.staff.id }, data: { isActive: true } });
+  await prisma.service.update({ where: { id: f.item.id }, data: { isActive: false } });
+  await assert.rejects(availability.search(input), { code: "SERVICE_UNAVAILABLE" });
+});
+
+test("availability reads fresh state and clock after waiting for configuration locks", async () => {
+  const f = await fixture("PENDING_PAYMENT");
+  const availability = createAvailabilityService(prisma, "Asia/Manila");
+  const date = Temporal.Instant.fromEpochMilliseconds(+f.startAt).toZonedDateTimeISO("Asia/Manila").toPlainDate().toString();
+  const input = { date, startAt: f.startAt.toISOString(), services: [{ serviceId: f.item.id, assignmentMode: "SPECIFIC" as const, staffId: f.staff.id }] };
+  const blocker = await observer.connect();
+  let pending: ReturnType<typeof availability.search> | undefined;
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT pg_advisory_xact_lock_shared($1)", [SALON_COORDINATION_KEY]);
+    await blocker.query('SELECT id FROM "Staff" WHERE id=$1 FOR UPDATE', [f.staff.id]);
+    await prisma.appointment.update({ where: { id: f.booking.id }, data: { holdExpiresAt: new Date(Date.now() + 1500) } });
+    pending = availability.search(input);
+    await writerBlocked();
+    await waitUntil(async () => (await observer.query('SELECT "holdExpiresAt" < clock_timestamp() AS expired FROM "Appointment" WHERE id=$1', [f.booking.id])).rows[0].expired);
+    await blocker.query("COMMIT");
+    assert.equal((await pending).slots.length, 1);
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT pg_advisory_xact_lock($1)", [SALON_COORDINATION_KEY]);
+    await blocker.query('UPDATE "Service" SET "isActive"=false WHERE id=$1', [f.item.id]);
+    const rejected = assert.rejects(availability.search(input), { code: "SERVICE_UNAVAILABLE" });
+    await writerBlocked(); await blocker.query("COMMIT"); await rejected;
+  } finally { await blocker.query("ROLLBACK"); blocker.release(); if (pending) await pending; }
+});
+
+test("public availability HTTP validates plans, returns no-store results, and handles local dates", async () => {
+  const f = await fixture();
+  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "CANCELLED" } });
+  const config = parseEnv({ DATABASE_URL: url.toString(), JWT_SECRET: "phase4-test-secret-at-least-32-characters", NODE_ENV: "test" });
+  const server = createApp(createApiRouter(prisma, config)).listen(0, "127.0.0.1");
+  await once(server, "listening"); const address = server.address(); assert.ok(address && typeof address !== "string");
+  const root = `http://127.0.0.1:${address.port}/api/availability`;
+  const post = (body: unknown) => fetch(root, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const date = Temporal.Instant.fromEpochMilliseconds(+f.startAt).toZonedDateTimeISO("Asia/Manila").toPlainDate().toString();
+  const input = { date, services: [{ serviceId: f.item.id, assignmentMode: "ANY_AVAILABLE" }] };
+  try {
+    assert.equal((await fetch(`${root}/staff`)).status, 200);
+    assert.equal((await post({ ...input, date: "2026-02-30" })).status, 400);
+    assert.equal((await post({ ...input, services: [] })).status, 400);
+    assert.equal((await post({ ...input, startAt: "2020-01-01T00:00:00Z" })).status, 400);
+    const response = await post(input); assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const body = await response.json(); assert.ok(body.slots.length > 0); assert.equal(body.timeZone, "Asia/Manila");
+    assert.ok(body.slots.some((s: { startAt: string }) => s.startAt === f.startAt.toISOString()));
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });

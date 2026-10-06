@@ -11,6 +11,7 @@
     "test:db": "node --import tsx --test tests/integration/*.test.ts",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
+    "admin:bootstrap": "node dist/src/bootstrap-admin.js",
     "build": "npm run db:generate && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "db:validate": "prisma validate --config prisma7.config.ts",
@@ -18,7 +19,11 @@
     "db:migrate": "prisma migrate deploy --config prisma7.config.ts",
     "db:status": "prisma migrate status --config prisma7.config.ts",
     "db:seed": "prisma db seed --config prisma7.config.ts",
-    "check": "npm run db:validate && npm run db:generate && npm run typecheck && npm test && npm run build"
+    "check": "npm run db:validate && npm run db:generate && npm run typecheck && npm test && npm run build",
+    "worker:holds": "tsx src/hold-worker.ts",
+    "start:holds": "node dist/src/hold-worker.js",
+    "worker:notifications": "tsx src/notification-worker.ts",
+    "start:notifications": "node dist/src/notification-worker.js"
   },
   "keywords": [],
   "author": "",

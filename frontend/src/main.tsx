@@ -3,7 +3,14 @@ import { createRoot } from "react-dom/client";
 import { api, type User } from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import "./style.css";
+import { GuestAppointment } from "./booking";
+import { Availability } from "./availability";
 import { Configuration } from "./configuration";
+import { AdminAppointments } from "./appointment-management";
+import { SettlementWorkspace } from "./settlement";
+import { Reports } from "./reports";
+import { Chatbot } from "./chatbot";
+import { PaymentsWorkspace } from "./payments";
 
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
 function Login() {
@@ -28,7 +35,7 @@ function Login() {
         <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
         {error && <p role="alert" className="error">{error}</p>}
         <button disabled={busy} className="primary">{busy ? "Signing in…" : "Sign in →"}</button>
-      </form><p className="help">Need access? Ask your salon administrator.</p></div></section>
+      </form><p><a href="/availability">Find an available salon time →</a></p><p><a href="/help">Questions? Ask the salon guide →</a></p><p className="help">Need access? Ask your salon administrator.</p></div></section>
   </main>;
 }
 
@@ -94,11 +101,11 @@ function Workspace() {
   const { user, logout } = useAuth();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [page, setPage] = useState<"accounts" | "configuration">("configuration");
+  const [page, setPage] = useState<"accounts" | "configuration" | "payments" | "appointments" | "settlement" | "reports">("configuration");
   return <div className="workspace"><header><a className="wordmark" href="/">CLIQUE<span>SALON</span></a><div className="user-menu"><span>{user?.firstName} · {user?.role === "ADMIN" ? "Admin" : "Cashier"}</span><button disabled={busy} onClick={async () => { setBusy(true); try { await logout(); } catch (err) { setError(message(err)); } finally { setBusy(false); } }}>Sign out</button></div></header>
     <main className="workspace-main"><p className="eyebrow">YOUR WORKSPACE</p><h1>Hello, {user?.firstName}.</h1><p className="welcome">Welcome to Clique Salon.</p>
       {error && <p role="alert" className="error">{error}</p>}
-      {user?.role === "ADMIN" ? <><nav className="workspace-tabs" aria-label="Admin workspace"><button aria-current={page === "configuration" ? "page" : undefined} onClick={() => setPage("configuration")}>Salon management</button><button aria-current={page === "accounts" ? "page" : undefined} onClick={() => setPage("accounts")}>Accounts</button></nav>{page === "configuration" ? <Configuration /> : <Accounts />}</> : <section className="cashier-card"><span className="badge active">Cashier access</span><h2>You’re signed in.</h2><p>Your payment and receipt workspace will be available when settlement features are added.</p></section>}
+      {user?.role === "ADMIN" ? <><nav className="workspace-tabs" aria-label="Admin workspace"><button aria-current={page === "reports" ? "page" : undefined} onClick={() => setPage("reports")}>Reports & audit</button><button aria-current={page === "settlement" ? "page" : undefined} onClick={() => setPage("settlement")}>Outcomes & commissions</button><button aria-current={page === "configuration" ? "page" : undefined} onClick={() => setPage("configuration")}>Salon management</button><button aria-current={page === "accounts" ? "page" : undefined} onClick={() => setPage("accounts")}>Accounts</button><button aria-current={page === "payments" ? "page" : undefined} onClick={() => setPage("payments")}>Appointment fees</button><button aria-current={page === "appointments" ? "page" : undefined} onClick={() => setPage("appointments")}>Appointments</button></nav>{page === "reports" ? <Reports admin /> : page === "settlement" ? <SettlementWorkspace admin /> : page === "appointments" ? <AdminAppointments /> : page === "configuration" ? <Configuration /> : page === "payments" ? <PaymentsWorkspace admin /> : <Accounts />}</> : <><nav className="workspace-tabs" aria-label="Cashier workspace"><button onClick={() => setPage("reports")}>Collections</button><button onClick={() => setPage("settlement")}>Service settlement</button><button onClick={() => setPage("payments")}>Appointment fees</button></nav>{page === "reports" ? <Reports admin={false} /> : page === "payments" ? <PaymentsWorkspace admin={false} /> : <SettlementWorkspace admin={false} />}</>}
     </main><footer>Clique Salon · Workspace</footer></div>;
 }
 function App() {
@@ -107,4 +114,4 @@ function App() {
   if (error) return <main className="loading"><h1>Unable to connect</h1><p role="alert">{error}</p><button onClick={() => void refresh()}>Try again</button></main>;
   return user ? <Workspace /> : <Login />;
 }
-createRoot(document.getElementById("root")!).render(<AuthProvider><App /></AuthProvider>);
+createRoot(document.getElementById("root")!).render(window.location.pathname === "/help" ? <Chatbot /> : window.location.pathname === "/appointment" ? <GuestAppointment /> : window.location.pathname === "/availability" ? <Availability /> : <AuthProvider><App /></AuthProvider>);

@@ -82,6 +82,9 @@ export function createConfigurationService(prisma: PrismaClient, timeZone: strin
       ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
       return { timeZone, profile, services, staff, qualifications, hours, closures, schedules, unavailability, policies };
     },
+    publicPolicy() {
+      return prisma.bookingPolicyVersion.findFirst({ where: { effectiveFrom: { lte: new Date() } }, orderBy: { effectiveFrom: "desc" }, select: { version: true, appointmentFeeType: true, appointmentFeeAmount: true, bookingHoldMinutes: true, maxReschedules: true, rescheduleCutoffHours: true, cancellationCutoffHours: true, noShowGraceHours: true, advanceBookingDays: true, minimumBookingLeadMinutes: true } });
+    },
     async publicSalon() {
       const [profile, hours, closures] = await Promise.all([
         prisma.salonProfile.findFirst({ select: { name: true, phone: true, email: true, address: true } }),

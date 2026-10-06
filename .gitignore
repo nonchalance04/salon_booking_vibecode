@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Logs
 logs
 *.log
@@ -148,7 +147,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
-=======
 __pycache__/
 *.py[cod]
 .venv/
@@ -170,4 +168,3 @@ Thumbs.db
 node_modules/
 dist/
 build/
->>>>>>> 779e2b4 (Phase 3 not finished)

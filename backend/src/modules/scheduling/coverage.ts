@@ -6,7 +6,7 @@ export type WeeklyWindow = {
   effectiveFrom?: Date | null; effectiveTo?: Date | null;
 };
 
-export function coversReservation(start: Date, end: Date, windows: WeeklyWindow[], timeZone: string) {
+export function reservationWindows(start: Date, end: Date, windows: WeeklyWindow[], timeZone: string) {
   const first = Temporal.Instant.fromEpochMilliseconds(start.getTime()).toZonedDateTimeISO(timeZone).toPlainDate();
   const last = Temporal.Instant.fromEpochMilliseconds(end.getTime() - 1).toZonedDateTimeISO(timeZone).toPlainDate();
   const intervals: [number, number][] = [];
@@ -20,8 +20,12 @@ export function coversReservation(start: Date, end: Date, windows: WeeklyWindow[
       intervals.push([at(window.startTime), at(window.endTime)]);
     }
   }
+  return intervals.sort((a, b) => a[0] - b[0]);
+}
+
+export function coversIntervals(start: Date, end: Date, intervals: [number, number][]) {
   let coveredUntil = start.getTime();
-  for (const [from, to] of intervals.sort((a, b) => a[0] - b[0])) {
+  for (const [from, to] of intervals) {
     if (from > coveredUntil) break;
     if (to > coveredUntil) coveredUntil = to;
     if (coveredUntil >= end.getTime()) return true;
@@ -31,4 +35,8 @@ export function coversReservation(start: Date, end: Date, windows: WeeklyWindow[
 
 export function overlaps(start: Date, end: Date, otherStart: Date, otherEnd: Date) {
   return start < otherEnd && end > otherStart;
+}
+
+export function coversReservation(start: Date, end: Date, windows: WeeklyWindow[], timeZone: string) {
+  return coversIntervals(start, end, reservationWindows(start, end, windows, timeZone));
 }

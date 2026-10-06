@@ -4,7 +4,7 @@ import { prisma, disconnectDatabase } from "./database/prisma.js";
 import { env } from "./config/env.js";
 
 const app = createApp(createApiRouter(prisma, env));
-const server = app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, env.HOST, () => {
   console.info(JSON.stringify({ level: "info", event: "server_started", port: env.PORT }));
 });
 
