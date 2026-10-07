@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { NotificationQueue } from "../generated/prisma/client.js";
 import { parseEnv } from "../src/config/env.schema.js";
-import { createResendProvider, createTwilioProvider, NotificationFailure, smsRecipient, type NotificationMessage } from "../src/modules/notifications/notification-provider.js";
+import { createResendProvider, createPhilSmsProvider, NotificationFailure, smsRecipient, type NotificationMessage } from "../src/modules/notifications/notification-provider.js";
 import { renderNotification } from "../src/modules/notifications/templates.js";
 
 const message: NotificationMessage = { id: "stable-queue-id", channel: "EMAIL", recipient: "guest@example.test", subject: "Booking confirmed", text: "Your booking was confirmed." };
@@ -17,17 +17,21 @@ test("Resend sends stable idempotency, exact text and safe transport options", a
   assert.deepEqual(JSON.parse(String(requests[0]!.body)), { from: "salon@example.test", to: [message.recipient], subject: message.subject, text: message.text });
   assert.equal(requests[0]!.signal, signal); assert.equal(requests[0]!.redirect, "error");
 });
-test("Twilio validates and normalizes Philippine numbers and sends form data", async () => {
+test("PhilSMS normalizes Philippine numbers and sends authenticated JSON", async () => {
   assert.equal(smsRecipient("0917 123 4567"), "+639171234567");
   assert.equal(smsRecipient("+63 (917) 123-4567"), "+639171234567");
   assert.throws(() => smsRecipient("0"), NotificationFailure);
   const request: typeof fetch = async (url, init) => {
-    assert.equal(url, "https://api.twilio.com/2010-04-01/Accounts/account/Messages.json");
-    assert.equal(new Headers(init!.headers).get("Authorization"), `Basic ${Buffer.from("account:secret").toString("base64")}`);
-    assert.deepEqual(Object.fromEntries(new URLSearchParams(String(init!.body))), { To: "+639171234567", MessagingServiceSid: "service", Body: message.text });
-    return Response.json({ sid: "accepted", status: "queued" });
+    assert.equal(url, "https://dashboard.philsms.com/api/v3/sms/send");
+    assert.equal(new Headers(init!.headers).get("Authorization"), "Bearer secret");
+    assert.deepEqual(JSON.parse(String(init!.body)), { recipient: "639171234567", sender_id: "Salon", type: "plain", message: message.text });
+    assert.equal(init!.signal, signal); assert.equal(init!.redirect, "error");
+    assert.equal(init!.method, "POST");
+    assert.equal(new Headers(init!.headers).get("Accept"), "application/json");
+    assert.equal(new Headers(init!.headers).get("Content-Type"), "application/json");
+    return Response.json({ status: "success", data: { uid: "accepted" } });
   };
-  await createTwilioProvider("account", "secret", "service", request).send({ ...message, channel: "SMS", recipient: "09171234567" }, signal);
+  await createPhilSmsProvider("secret", "Salon", request).send({ ...message, channel: "SMS", recipient: "09171234567" }, signal);
 });
 test("provider failures classify retryable statuses and hide response bodies", async () => {
   for (const status of [400, 401, 403, 408, 409, 422, 429, 500, 503]) {
@@ -39,7 +43,7 @@ test("provider failures classify retryable statuses and hide response bodies", a
     });
   }
   await assert.rejects(createResendProvider("secret", "from", async () => Response.json({})).send(message, signal), /INVALID_PROVIDER_RESPONSE/);
-  await assert.rejects(createTwilioProvider("account", "secret", "service", async () => Response.json({ sid: "id", status: "failed" })).send({ ...message, channel: "SMS", recipient: "+639171234567" }, signal), /PROVIDER_REJECTED/);
+  await assert.rejects(createPhilSmsProvider("secret", "Salon", async () => Response.json({ status: "error", message: "private provider error" })).send({ ...message, channel: "SMS", recipient: "+639171234567" }, signal), /PROVIDER_REJECTED/);
 });
 test("all existing outbox events render without secure tokens or unsupported payment claims", () => {
   const base = { id: "id", recipient: "guest@example.test", channel: "EMAIL" as const, payload: { schemaVersion: 1, bookingCode: "BOOK-123", guestAccessToken: "private", paymentId: "private" } };
@@ -59,9 +63,63 @@ test("notification configuration validates credentials, bounds and production re
   const base = { DATABASE_URL: "postgresql://localhost/test", JWT_SECRET: "a".repeat(32) };
   assert.equal(parseEnv(base).NOTIFICATION_EMAIL_PROVIDER, "disabled");
   for (const bad of [
-    { NOTIFICATION_EMAIL_PROVIDER: "resend" }, { NOTIFICATION_SMS_PROVIDER: "twilio" },
+    { NOTIFICATION_EMAIL_PROVIDER: "resend" }, { NOTIFICATION_SMS_PROVIDER: "philsms" }, { NOTIFICATION_SMS_PROVIDER: "twilio" },
     { NOTIFICATION_LEASE_MS: 5000, NOTIFICATION_TIMEOUT_MS: 10000 }, { NOTIFICATION_MAX_ATTEMPTS: 0 },
     { NOTIFICATION_REMINDER_HOURS: -1 }, { NODE_ENV: "production", TRUSTED_ORIGINS: "https://salon.test", NOTIFICATION_EMAIL_PROVIDER: "test" },
     { NODE_ENV: "production", TRUSTED_ORIGINS: "https://salon.test", NOTIFICATION_SMS_PROVIDER: "test" },
   ]) assert.throws(() => parseEnv({ ...base, ...bad }), /Invalid environment/);
+});
+
+test("PhilSMS rejects malformed responses and provider errors without exposing content", async () => {
+  const sms = { ...message, channel: "SMS" as const, recipient: "+639171234567" };
+  for (const body of [null, [], {}, { status: "queued" }, { status: true }]) {
+    await assert.rejects(createPhilSmsProvider("secret", "Salon", async () => Response.json(body)).send(sms, signal), /INVALID_PROVIDER_RESPONSE/);
+  }
+  await assert.rejects(createPhilSmsProvider("secret", "Salon", async () => new Response("private invalid JSON")).send(sms, signal), /INVALID_PROVIDER_RESPONSE/);
+  await assert.rejects(createPhilSmsProvider("secret", "Salon", async () => Response.json({ status: "error", message: "private recipient secret" })).send(sms, signal), (error: NotificationFailure) => {
+    assert.equal(error.code, "PROVIDER_REJECTED"); assert.equal(error.retryable, false); assert.equal(error.message, "PROVIDER_REJECTED"); return true;
+  });
+  for (const status of [400, 401, 403, 408, 409, 422, 429, 500, 503]) {
+    await assert.rejects(createPhilSmsProvider("secret", "Salon", async () => new Response("private recipient secret", { status })).send(sms, signal), (error: NotificationFailure) => {
+      assert.equal(error.code, `PROVIDER_HTTP_${status}`);
+      assert.equal(error.retryable, [408, 409, 429, 500, 503].includes(status)); return true;
+    });
+  }
+});
+
+test("PhilSMS refuses invalid destinations and wrong channels before calling the network", async () => {
+  let calls = 0;
+  const provider = createPhilSmsProvider("secret", "Salon", async () => { calls++; return Response.json({ status: "success" }); });
+  await assert.rejects(provider.send(message, signal), /CHANNEL_MISMATCH/);
+  for (const recipient of ["0", "+12025550123", "+63281234567", "+639171234567,+639181234567"]) {
+    await assert.rejects(provider.send({ ...message, channel: "SMS", recipient }, signal), (error: NotificationFailure) => {
+      assert.equal(error.code, "INVALID_RECIPIENT"); assert.equal(error.retryable, false); return true;
+    });
+  }
+  assert.equal(calls, 0);
+});
+
+test("PhilSMS preserves Unicode content and propagates the worker abort signal", async () => {
+  const text = "Appointment confirmed — ₱100.00";
+  const controller = new AbortController();
+  const provider = createPhilSmsProvider("secret", "Salon", async (_url, init) => {
+    assert.equal(JSON.parse(String(init!.body)).type, "unicode");
+    assert.equal(JSON.parse(String(init!.body)).message, text);
+    assert.equal(init!.signal, controller.signal);
+    controller.abort(); init!.signal!.throwIfAborted();
+    return Response.json({ status: "success" });
+  });
+  await assert.rejects(provider.send({ ...message, text, channel: "SMS", recipient: "+639171234567" }, controller.signal), { name: "AbortError" });
+});
+
+test("PhilSMS configuration requires a token and approved sender and wires the SMS provider", async () => {
+  const { configuredNotificationProviders } = await import("../src/modules/notifications/provider-config.js");
+  const base = { DATABASE_URL: "postgresql://localhost/test", JWT_SECRET: "a".repeat(32), NOTIFICATION_SMS_PROVIDER: "philsms", PHILSMS_API_TOKEN: "private-token", PHILSMS_SENDER_ID: "Salon" };
+  const env = parseEnv(base);
+  assert.deepEqual(Object.keys(configuredNotificationProviders(env)), ["SMS"]);
+  assert.deepEqual(Object.keys(configuredNotificationProviders(parseEnv({ ...base, NOTIFICATION_SMS_PROVIDER: "disabled" }))), []);
+  for (const bad of [{ PHILSMS_API_TOKEN: "" }, { PHILSMS_API_TOKEN: "  " }, { PHILSMS_API_TOKEN: "token\nsecret" }, { PHILSMS_SENDER_ID: "" }, { PHILSMS_SENDER_ID: " " }, { PHILSMS_SENDER_ID: "MoreThan11Chars" }, { PHILSMS_SENDER_ID: "bad\nsender" }]) {
+    assert.throws(() => parseEnv({ ...base, ...bad }), /Invalid environment/);
+  }
+  assert.equal(parseEnv({ ...base, NODE_ENV: "production", TRUSTED_ORIGINS: "https://salon.test" }).NOTIFICATION_SMS_PROVIDER, "philsms");
 });

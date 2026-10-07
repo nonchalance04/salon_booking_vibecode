@@ -298,3 +298,30 @@ changing scheduling/financial rules:
   requires payment/message reconciliation before re-enabling providers.
 - Acceptance fixes receipt wrapping/print isolation and same-tab private-link
   navigation. Scheduling, payment and historical-data rules are unchanged.
+
+## 2026-10-08 — Replace Twilio SMS with PhilSMS
+
+- User selected PhilSMS. Replace the SMS adapter with provider `philsms`, token
+  `PHILSMS_API_TOKEN` and approved `PHILSMS_SENDER_ID`. Disabled remains the default.
+- Use bearer authentication and JSON at https://app.philsms.com/api/v3/sms/send
+  following https://app.philsms.com/developers/documentation. Confirm account
+  compatibility before activation; the newer dashboard API was not publicly
+  available for verification.
+- Accept Philippine mobile destinations, normalize local 09/international +639,
+  and select Unicode mode for non-ASCII text.
+- Preserve queue history, routing, templates, reminders and retries. No migration
+  or dependency added. Require a success envelope; declared provider errors are
+  terminal and sanitized. Transient HTTP/malformed responses use bounded retries.
+- SENT means acceptance, not handset delivery. No idempotency guarantee assumed.
+  Earlier Phase 9/11 reports describe historical Twilio verification. PhilSMS
+  live acceptance awaits credentials, sender approval and handset testing.
+
+## 2026-10-08 — Correct PhilSMS portal for the configured account
+
+- User confirmed their token belongs to dashboard.philsms.com. Read-only balance
+  and SMS history returned success on its v3 API, while the older app.philsms.com
+  returned Unauthenticated for the same token. The dashboard SMS route advertises
+  POST support through OPTIONS.
+- Change the adapter endpoint to https://dashboard.philsms.com/api/v3/sms/send.
+  Keep bearer authentication, payload, routing, retry rules and queue history.
+  No live SMS was sent during diagnosis; existing FAILED rows are not reset.

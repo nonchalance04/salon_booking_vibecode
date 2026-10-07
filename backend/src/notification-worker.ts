@@ -1,3 +1,4 @@
+import { notificationWorkerError } from "./modules/notifications/worker-error.js";
 import { prisma, disconnectDatabase } from "./database/prisma.js";
 import { env } from "./config/env.js";
 import { configuredNotificationProviders } from "./modules/notifications/provider-config.js";
@@ -14,10 +15,10 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let running: Promise<void> | undefined;
 async function tick() {
   try { await service.enqueueReminders(); }
-  catch { console.error(JSON.stringify({ level: "error", event: "notification_reminder_scan_failed" })); }
+  catch (error) { console.error(JSON.stringify({ level: "error", event: "notification_reminder_scan_failed", ...notificationWorkerError(error) })); }
   try {
     for (let i = 0; i < 100 && !stopping; i++) if (!await service.processNext()) break;
-  } catch { console.error(JSON.stringify({ level: "error", event: "notification_worker_failed" })); }
+  } catch (error) { console.error(JSON.stringify({ level: "error", event: "notification_worker_failed", ...notificationWorkerError(error) })); }
   if (!stopping) timer = setTimeout(startTick, env.NOTIFICATION_POLL_MS);
 }
 function startTick() { running = tick(); }

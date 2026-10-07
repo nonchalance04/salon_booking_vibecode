@@ -5,6 +5,9 @@ Repository for the Salon Booking and Appointment System.
 For a complete walkthrough, see the [step-by-step setup and testing guide](docs/SETUP_AND_TESTING.md),
 including database creation, local configuration, automated checks, and guest/Admin/Cashier acceptance tests.
 
+For notification providers, follow the [email and SMS setup guide](docs/EMAIL_SMS_SETUP.md)
+for Resend email, PhilSMS SMS, worker startup, reminders, and delivery verification.
+
 The backend foundation uses Node.js, TypeScript, Express, PostgreSQL, Prisma, and
 Zod. Admin/Cashier authentication and Admin account management are implemented.
 The React/TypeScript/Vite frontend provides login, session restoration, role-aware
@@ -14,7 +17,7 @@ payments, confirmation, receipts, Admin reconciliation, and Phase 7 appointment
 changes/no-show recovery. The user reported Phase 6 testing complete and authorized
 Phase 7; future payment diagnostics remain separately scoped. Phase 8 service
 outcomes, settlement, receipts, and commissions are implemented. Phase 9 adds an
-independent notification worker, reminders, and optional Resend/Twilio adapters.
+independent notification worker, reminders, and optional Resend/PhilSMS adapters.
 Phase 10 adds authorized reports, dashboards, audit viewing, Cashier collection
 summaries and a guided salon assistant.
 
@@ -382,7 +385,7 @@ cannot duplicate collection totals. No models or migrations were added.
 
 ## PayMongo GCash setup
 
-Follow the [real PayMongo sandbox validation procedure](docs/PAYMONGO_SANDBOX_VALIDATION.md)
+Follow the [detailed PayMongo setup and testing guide](docs/PAYMONGO_SANDBOX_VALIDATION.md)
 for exact files to edit, HTTPS tunnel setup, webhook verification, and pass criteria.
 
 The integration follows PayMongo's [Hosted Checkout V2](https://docs.paymongo.com/reference/create_checkout_sessions_2)
@@ -561,12 +564,11 @@ Optional live adapters (neither account is configured by this repository):
 | Channel | Configuration | Setup |
 | --- | --- | --- |
 | Email | `NOTIFICATION_EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM` | Verify your sender domain in Resend; FROM is a plain email address |
-| SMS | `NOTIFICATION_SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` | Configure the Messaging Service with a sender registered for Philippine destinations |
+| SMS | `NOTIFICATION_SMS_PROVIDER=philsms`, `PHILSMS_API_TOKEN`, `PHILSMS_SENDER_ID` | Configure an API token and approved sender for the PhilSMS dashboard v3 API |
 
 Messages use plain text and the event's stored booking code. Reminder times use
 `SALON_TIMEZONE`. Guest tokens, hashes, internal payment IDs, and customer names are
-excluded. Philippine `09XXXXXXXXX` numbers become `+639XXXXXXXXX`; other destinations
-must already use an international `+` number. Email remains the preferred channel
+excluded. Philippine `09XXXXXXXXX` numbers become `+639XXXXXXXXX`; the PhilSMS adapter accepts Philippine mobile numbers only and sends digits without `+`. Email remains the preferred channel
 when an email address was supplied; there is no automatic channel fallback.
 
 `NOTIFICATION_REMINDER_HOURS` defaults to 24 (0 disables reminders). A scan queues
@@ -588,7 +590,7 @@ and waits for the active attempt before disconnecting.
 
 `SENT` means provider acceptance, not verified inbox/handset receipt. Delivery is at
 least once. Resend receives the stable queue ID as `Idempotency-Key`; its deduplication
-window is 24 hours. Twilio message creation has no assumed idempotency guarantee.
+window is 24 hours. PhilSMS message creation has no assumed idempotency guarantee.
 A crash after acceptance can therefore duplicate external delivery. Keep provider
 and template configuration stable while retrying a queue item.
 
@@ -601,8 +603,9 @@ already queued deliveries. Configure process supervision for both workers in dep
 
 Provider references: [Resend send API](https://resend.com/docs/api-reference/emails/send-email),
 [Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys),
-[Twilio Messages API](https://www.twilio.com/docs/messaging/api/message-resource),
-[Philippine sender requirements](https://www.twilio.com/en-us/guidelines/ph/sms).
+[PhilSMS dashboard](https://dashboard.philsms.com/).
+Use a token from this dashboard; sending uses its `/api/v3/sms/send` endpoint.
+Tokens from the older `app.philsms.com` portal are not interchangeable.
 See [Phase 9 verification](docs/PHASE_9_VERIFICATION.md) for local evidence and remaining
 live-delivery acceptance.
 

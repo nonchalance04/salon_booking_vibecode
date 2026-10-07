@@ -1,5 +1,5 @@
 import type { parseEnv } from "../../config/env.schema.js";
-import { createResendProvider, createTestNotificationProvider, createTwilioProvider, type NotificationProvider } from "./notification-provider.js";
+import { createResendProvider, createTestNotificationProvider, createPhilSmsProvider, type NotificationProvider } from "./notification-provider.js";
 
 export function configuredNotificationProviders(env: ReturnType<typeof parseEnv>) {
   const providers: Partial<Record<"EMAIL" | "SMS", NotificationProvider>> = {};
@@ -9,6 +9,6 @@ export function configuredNotificationProviders(env: ReturnType<typeof parseEnv>
   if (env.NOTIFICATION_EMAIL_PROVIDER === "test") providers.EMAIL = test;
   if (env.NOTIFICATION_SMS_PROVIDER === "test") providers.SMS = test;
   if (env.NOTIFICATION_EMAIL_PROVIDER === "resend") providers.EMAIL = createResendProvider(env.RESEND_API_KEY!, env.NOTIFICATION_EMAIL_FROM!);
-  if (env.NOTIFICATION_SMS_PROVIDER === "twilio") providers.SMS = createTwilioProvider(env.TWILIO_ACCOUNT_SID!, env.TWILIO_AUTH_TOKEN!, env.TWILIO_MESSAGING_SERVICE_SID!);
+  if (env.NOTIFICATION_SMS_PROVIDER === "philsms") providers.SMS = createPhilSmsProvider(env.PHILSMS_API_TOKEN!, env.PHILSMS_SENDER_ID!);
   return providers;
 }

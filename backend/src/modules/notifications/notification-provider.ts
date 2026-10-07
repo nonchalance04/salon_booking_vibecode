@@ -55,15 +55,29 @@ export function smsRecipient(value: string) {
   return international;
 }
 
-export function createTwilioProvider(accountSid: string, authToken: string, messagingServiceSid: string, request: typeof fetch = fetch): NotificationProvider {
+// PhilSMS dashboard v3 API; tokens are scoped to the account portal.
+export function createPhilSmsProvider(apiToken: string, senderId: string, request: typeof fetch = fetch): NotificationProvider {
   return { async send(message, signal) {
     if (message.channel !== "SMS") throw new NotificationFailure("CHANNEL_MISMATCH", false);
-    const response = await request(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+    const recipient = smsRecipient(message.recipient);
+    if (!/^\+639\d{9}$/.test(recipient)) throw new NotificationFailure("INVALID_RECIPIENT", false);
+    const response = await request("https://dashboard.philsms.com/api/v3/sms/send", {
       method: "POST", signal, redirect: "error",
-      headers: { Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ To: smsRecipient(message.recipient), MessagingServiceSid: messagingServiceSid, Body: message.text }).toString(),
+      headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ recipient: recipient.slice(1), sender_id: senderId,
+        type: /[^\x00-\x7F]/.test(message.text) ? "unicode" : "plain", message: message.text }),
     });
-    // This endpoint has no assumed idempotency guarantee: crash recovery may resend.
-    await accepted(response, "sid");
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new NotificationFailure(`PROVIDER_HTTP_${response.status}`, response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500);
+    }
+    let body: unknown;
+    try { body = await response.json(); }
+    catch { throw new NotificationFailure("INVALID_PROVIDER_RESPONSE"); }
+    if (!body || typeof body !== "object" || !("status" in body)) throw new NotificationFailure("INVALID_PROVIDER_RESPONSE");
+    if (body.status === "error") throw new NotificationFailure("PROVIDER_REJECTED", false);
+    if (body.status !== "success") throw new NotificationFailure("INVALID_PROVIDER_RESPONSE");
+    // Acceptance is not handset delivery. No documented idempotency guarantee:
+    // a crash after acceptance can cause recovery to resend the message.
   } };
 }

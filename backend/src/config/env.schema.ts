@@ -11,12 +11,11 @@ export const envSchema = z.object({
   }, "A PostgreSQL URL with a database name is required."),
   JWT_SECRET: z.string().trim().min(32),
   NOTIFICATION_EMAIL_PROVIDER: z.enum(["disabled", "test", "resend"]).default("disabled"),
-  NOTIFICATION_SMS_PROVIDER: z.enum(["disabled", "test", "twilio"]).default("disabled"),
+  NOTIFICATION_SMS_PROVIDER: z.enum(["disabled", "test", "philsms"]).default("disabled"),
   RESEND_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().min(10).optional()),
   NOTIFICATION_EMAIL_FROM: z.preprocess(v => v === "" ? undefined : v, z.email().optional()),
-  TWILIO_ACCOUNT_SID: z.preprocess(v => v === "" ? undefined : v, z.string().regex(/^AC[0-9a-fA-F]{32}$/).optional()),
-  TWILIO_AUTH_TOKEN: z.preprocess(v => v === "" ? undefined : v, z.string().min(16).optional()),
-  TWILIO_MESSAGING_SERVICE_SID: z.preprocess(v => v === "" ? undefined : v, z.string().regex(/^MG[0-9a-fA-F]{32}$/).optional()),
+  PHILSMS_API_TOKEN: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).regex(/^\S+$/).optional()),
+  PHILSMS_SENDER_ID: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).max(11).regex(/^[A-Za-z0-9 ]+$/).optional()),
   NOTIFICATION_LEASE_MS: z.coerce.number().int().min(5000).max(600000).default(60000),
   NOTIFICATION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(20000).default(10000),
   NOTIFICATION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
@@ -49,7 +48,7 @@ export const envSchema = z.object({
   }
   const notificationFields = [
     ...(value.NOTIFICATION_EMAIL_PROVIDER === "resend" ? ["RESEND_API_KEY", "NOTIFICATION_EMAIL_FROM"] as const : []),
-    ...(value.NOTIFICATION_SMS_PROVIDER === "twilio" ? ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_MESSAGING_SERVICE_SID"] as const : []),
+    ...(value.NOTIFICATION_SMS_PROVIDER === "philsms" ? ["PHILSMS_API_TOKEN", "PHILSMS_SENDER_ID"] as const : []),
   ];
   for (const field of notificationFields) {
     if (!value[field]) context.addIssue({ code: "custom", path: [field], message: "Notification provider configuration is required." });

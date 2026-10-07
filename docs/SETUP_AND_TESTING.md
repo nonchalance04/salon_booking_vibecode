@@ -385,8 +385,8 @@ Local tests do not prove merchant or message delivery acceptance.
 - **PayMongo sandbox:** follow [PayMongo sandbox validation](PAYMONGO_SANDBOX_VALIDATION.md)
   for test credentials, an HTTPS callback, hosted checkout, signed webhook delivery,
   duplicate/failure behavior, and a staff-issued receipt.
-- **Email/SMS:** follow the live-provider sections of the
-  [notification guide](PHASE_9_TESTING_GUIDE.md), using intended test recipients.
+- **Email/SMS:** follow the [email and SMS setup guide](EMAIL_SMS_SETUP.md)
+  for provider accounts, sender verification, and delivery to intended test recipients.
 - **Production:** use [Deployment](DEPLOYMENT.md) and [Operations](OPERATIONS.md)
   for production configuration, Admin bootstrap, process supervision, HTTPS,
   migrations, backups, and restore. Do not use development seed/test providers in

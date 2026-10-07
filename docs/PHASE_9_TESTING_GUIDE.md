@@ -1,5 +1,8 @@
 # Phase 9 — Notification delivery and reminders: testing guide
 
+For account creation, sender verification, environment configuration, and real
+delivery setup, start with the [email and SMS setup guide](EMAIL_SMS_SETUP.md).
+
 Prepared 2026-10-05. Run the sections in order. This is a repeatable test procedure
 and report template; unchecked scenarios below are not claims of completed testing.
 
@@ -68,7 +71,7 @@ NOTIFICATION_RETRY_BASE_MS=60000
 ```
 
 Starting with reminders off makes the first event counts easier to inspect.
-No Resend/Twilio keys are needed for test providers. Remove invalid stale values
+No Resend/PhilSMS keys are needed for test providers. Remove invalid stale values
 from optional provider variables if startup validation reports them.
 
 For the browser confirmation scenario, you can use the existing test payment
@@ -531,27 +534,26 @@ The adapter sends queue ID as Idempotency-Key. See
 [Resend idempotency documentation](https://resend.com/docs/dashboard/emails/idempotency-keys)
 for its deduplication window; do not force repeated real sends to demonstrate it.
 
-### 12.2 Twilio SMS
+### 12.2 PhilSMS SMS
 
-1. Configure a Twilio Messaging Service and a sender suitable for Philippine
-   destinations. Follow the current [Philippine SMS guidelines](https://www.twilio.com/en-us/guidelines/ph/sms)
-   and [Messages API documentation](https://www.twilio.com/docs/messaging/api/message-resource).
-   Confirm account/trial restrictions and destination permissions in your dashboard.
+1. Configure an API token and approved sender with available SMS credits.
+   Use the [PhilSMS dashboard](https://dashboard.philsms.com/) token.
+   The adapter uses `https://dashboard.philsms.com/api/v3/sms/send`; the older
+   portal does not accept dashboard tokens.
 2. Set:
 
 ```dotenv
 NOTIFICATION_EMAIL_PROVIDER=disabled
-NOTIFICATION_SMS_PROVIDER=twilio
-TWILIO_ACCOUNT_SID=YOUR_AC_ACCOUNT_SID
-TWILIO_AUTH_TOKEN=YOUR_PRIVATE_AUTH_TOKEN
-TWILIO_MESSAGING_SERVICE_SID=YOUR_MG_SERVICE_SID
+NOTIFICATION_SMS_PROVIDER=philsms
+PHILSMS_API_TOKEN=YOUR_PRIVATE_API_TOKEN
+PHILSMS_SENDER_ID=YourSalon
 ```
 
 3. Restart the worker. Make a new QA booking **without email**, using a mobile number
-   you control. Confirm it and inspect queue and Twilio message records.
+   you control. Confirm it and inspect queue and PhilSMS message records.
 4. Read the SMS on the handset. Check the booking code and any reminder time.
 
-**Pass:** intended handset receives the correct text and Twilio shows an appropriate
+**Pass:** intended handset receives the correct text and PhilSMS shows an appropriate
 result. SENT in the application alone is insufficient. Provider delivery status may
 later become failed/undelivered; this app does not currently synchronize those later
 changes back into NotificationQueue.
