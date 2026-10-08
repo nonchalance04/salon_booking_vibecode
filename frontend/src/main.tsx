@@ -3,14 +3,12 @@ import { createRoot } from "react-dom/client";
 import { api, type User } from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import "./style.css";
-import { GuestAppointment } from "./booking";
-import { Availability } from "./availability";
 import { Configuration } from "./configuration";
 import { AdminAppointments } from "./appointment-management";
 import { SettlementWorkspace } from "./settlement";
 import { Reports } from "./reports";
-import { Chatbot } from "./chatbot";
 import { PaymentsWorkspace } from "./payments";
+import { PublicSite } from "./public-site";
 
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
 function Login() {
@@ -114,4 +112,4 @@ function App() {
   if (error) return <main className="loading"><h1>Unable to connect</h1><p role="alert">{error}</p><button onClick={() => void refresh()}>Try again</button></main>;
   return user ? <Workspace /> : <Login />;
 }
-createRoot(document.getElementById("root")!).render(window.location.pathname === "/help" ? <Chatbot /> : window.location.pathname === "/appointment" ? <GuestAppointment /> : window.location.pathname === "/availability" ? <Availability /> : <AuthProvider><App /></AuthProvider>);
+createRoot(document.getElementById("root")!).render(["/staff", "/login", "/admin"].includes(window.location.pathname) ? <AuthProvider><App /></AuthProvider> : <PublicSite />);

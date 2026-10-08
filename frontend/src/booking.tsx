@@ -101,10 +101,10 @@ function readGuestCredentials() {
     const params = new URLSearchParams(window.location.hash.slice(1));
     // Fragments never go to the server. Remove it from the current history entry
     // after reading; keep the token in component memory, not browser storage.
-    window.history.replaceState(null, "", "/appointment");
+    if (params.has("code") || params.has("token")) window.history.replaceState(null, "", "/appointment");
     return { bookingCode: params.get("code") ?? "", token: params.get("token") ?? "" };
 }
-export function GuestAppointment() {
+export function GuestAppointment({ embedded = false }: { embedded?: boolean } = {}) {
   const [credentials, setCredentials] = useState(readGuestCredentials);
   const [result, setResult] = useState<Appointment | null>(null);
   const [token, setToken] = useState(credentials.token);
@@ -122,7 +122,8 @@ export function GuestAppointment() {
   }
   useEffect(() => {
     const changed = () => {
-      if (!window.location.hash) return;
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      if (!params.has("code") && !params.has("token")) return;
       requestGeneration.current++;
       setResult(null); setToken(""); setError(""); setBusy(false);
       setCredentials(readGuestCredentials());
@@ -131,13 +132,14 @@ export function GuestAppointment() {
     return () => { window.removeEventListener("hashchange", changed); requestGeneration.current++; };
   }, []);
   useEffect(() => { if (credentials.bookingCode && credentials.token) void retrieve(credentials.bookingCode, credentials.token); }, [credentials]);
-  return <div className="workspace"><header><a className="wordmark" href="/availability">CLIQUE<span>SALON</span></a><a href="/availability">Find a salon time</a><a href="/help">Salon help</a></header>
-    <main className="workspace-main availability-page"><h1>Your appointment</h1>
+  return <div className={embedded ? "guest-appointment container page-section" : "workspace"}>{!embedded && <header><a className="wordmark" href="/availability">CLIQUE<span>SALON</span></a><a href="/availability">Find a salon time</a><a href="/help">Salon help</a></header>}
+    <section className={embedded ? "manage-panel" : "workspace-main availability-page"}><p className="eyebrow">YOUR VISIT</p><h1 className="section-title">Your appointment</h1>
       {result ? <AppointmentView key={result.bookingCode} initial={result} token={token} /> : <form key={credentials.bookingCode} className="account-form" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void retrieve(String(data.get("code")).trim(), String(data.get("token")).trim()); }}>
-        <p>If you just returned from PayMongo, switch back to your original booking tab and check payment status, or reopen your saved private booking link.</p>
+        <p>Open your saved private booking link, or enter your booking code and private access token below.</p>
+        <p className="muted">If you just returned from PayMongo, check payment status in your original booking tab or reopen that private link.</p>
         <label>Booking code<input name="code" required defaultValue={credentials.bookingCode} /></label>
         <label>Private access token<input name="token" type="password" required autoComplete="off" defaultValue={credentials.token} /></label>
         <button disabled={busy}>{busy ? "Loading…" : "View appointment"}</button>
       </form>}{error && <p role="alert" className="error">{error}</p>}
-    </main></div>;
+    </section></div>;
 }

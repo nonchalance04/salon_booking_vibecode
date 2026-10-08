@@ -99,6 +99,12 @@ PostgreSQL service, plus the frontend production build. No production credential
 
 ## Frontend and authentication
 
+The public frontend now uses the customer design from `frontend2/`, integrated
+with the existing booking and payment APIs. Open `/` for the customer homepage
+and `/staff` for the Admin/Cashier sign-in and workspace. The runnable application
+remains `frontend/`; see [design integration](docs/FRONTEND_DESIGN_INTEGRATION.md)
+for routes, adaptations and verification.
+
 With the backend running on port 3000, open another terminal:
 
 ```bash
@@ -107,7 +113,7 @@ npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173` and use the Admin/Cashier credentials you supplied
+Open `http://127.0.0.1:5173/staff` and use the Admin/Cashier credentials you supplied
 when seeding. The Vite server proxies `/api` to `http://127.0.0.1:3000` without
 rewriting the browser Origin. Run `npm run build` in `frontend/` for production
 assets. For production, serve the frontend over HTTPS and reverse-proxy `/api`
