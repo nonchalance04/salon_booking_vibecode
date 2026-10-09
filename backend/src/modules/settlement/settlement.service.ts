@@ -80,13 +80,15 @@ export function createSettlementService(prisma: PrismaClient) {
     },
     async settle(actorId: string, raw: SettlementInput) {
       const input = settlementSchema.parse(raw);
+      // Reuse the same salon reference when a payment request is retried.
+      const reference = input.externalReference ?? `SALON-SERVICE-${input.idempotencyKey}`;
       return transact(async tx => {
         const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId, true);
         const key = `settlement:${input.idempotencyKey}`;
-        const matches = await tx.payment.findMany({ where: { OR: [{ idempotencyKey: key }, { provider: "manual", externalReference: input.externalReference }] } });
+        const matches = await tx.payment.findMany({ where: { OR: [{ idempotencyKey: key }, { provider: "manual", externalReference: reference }] } });
         if (matches.length) {
           const p = matches[0]!;
-          if (matches.length !== 1 || p.appointmentId !== row.id || p.type !== "SERVICE_PAYMENT" || p.status !== "SUCCEEDED" || p.method !== input.method || p.currency !== input.currency || !p.amount.equals(input.amount) || p.externalReference !== input.externalReference || row.completionType !== "SERVICE_SETTLEMENT") throw fail("PAYMENT_IDENTITY_CONFLICT", "This payment identity is associated with different details.");
+          if (matches.length !== 1 || p.appointmentId !== row.id || p.type !== "SERVICE_PAYMENT" || p.status !== "SUCCEEDED" || p.method !== input.method || p.currency !== input.currency || !p.amount.equals(input.amount) || p.externalReference !== reference || row.completionType !== "SERVICE_SETTLEMENT") throw fail("PAYMENT_IDENTITY_CONFLICT", "This payment identity is associated with different details.");
           return view(tx, row, false);
         }
         editable(row, input.revision);
@@ -98,11 +100,11 @@ export function createSettlementService(prisma: PrismaClient) {
         if (!amount.equals(input.amount)) throw fail("AMOUNT_MISMATCH", "The payment must equal the full performed-service charge.");
         const now = await freshTime(tx);
         const payment = await tx.payment.create({ data: { appointmentId: row.id, type: "SERVICE_PAYMENT", method: input.method, provider: "manual", status: "SUCCEEDED", amount,
-          currency: "PHP", idempotencyKey: key, externalReference: input.externalReference, satisfiesObligation: true, recordedByUserId: actor.id, paidAt: now } });
+          currency: "PHP", idempotencyKey: key, externalReference: reference, satisfiesObligation: true, recordedByUserId: actor.id, paidAt: now } });
         const salon = await tx.salonProfile.findFirst();
         const receipt = await tx.receipt.create({ data: { paymentId: payment.id, receiptNumber: `R-${randomUUID()}`, issuedByUserId: actor.id,
           receiptSnapshot: { schemaVersion: 1, bookingCode: row.bookingCode, paymentId: payment.id, type: "SERVICE_PAYMENT", amount: amount.toFixed(2), currency: "PHP", method: input.method,
-            externalReference: input.externalReference, paidAt: now.toISOString(), customerName: `${row.customer.firstName} ${row.customer.lastName}`,
+            externalReference: reference, paidAt: now.toISOString(), customerName: `${row.customer.firstName} ${row.customer.lastName}`,
             salon: salon ? { name: salon.name, address: salon.address, phone: salon.phone } : null,
             services: performed.map(s => ({ name: s.serviceNameSnapshot, amount: s.actualChargedAmount!.toFixed(2) })) } } });
         await tx.commissionRecord.createMany({ data: commissions.map(c => ({ ...c, appointmentId: row.id, sourcePaymentId: payment.id, finalizedByUserId: actor.id, finalizedAt: now })) });

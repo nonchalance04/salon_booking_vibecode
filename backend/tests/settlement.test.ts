@@ -27,3 +27,11 @@ test("external settlement inputs reject numeric money, extra fields and invalid 
   assert.equal(settlementSchema.safeParse({ amount: 1 }).success, false);
   assert.equal(outcomesSchema.safeParse({ services: [{ outcome: "REMOVED" }] }).success, false);
 });
+
+test("service payments accept automatic references while validating supplied legacy references", () => {
+  const input = { bookingCode: "SL-test", revision: "a".repeat(64), idempotencyKey: "10000000-0000-4000-8000-000000000001", amount: "100.00", currency: "PHP" };
+  for (const method of ["CASH", "GCASH", "OTHER"]) {
+    assert.ok(settlementSchema.safeParse({ ...input, method }).success);
+    assert.equal(settlementSchema.safeParse({ ...input, method, externalReference: " " }).success, false);
+  }
+});

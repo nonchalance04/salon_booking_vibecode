@@ -116,6 +116,24 @@ test("no-service closure retries create no payment receipt or commission and pre
   assert.equal(await prisma.notificationQueue.count({ where: { appointmentId: f.booking.id } }), 1);
 });
 
+test("service settlement generates receipt references automatically for all methods and retains retry protection", async () => {
+  const references = new Set<string>();
+  for (const method of ["CASH", "GCASH", "OTHER"] as const) {
+    const f = await recorded();
+    const { externalReference: _unused, ...base } = pay(f.saved);
+    const input = { ...base, method };
+    await Promise.all([settlement.settle(cashierId, input), settlement.settle(cashierId, input)]);
+    const saved = await prisma.payment.findFirstOrThrow({ where: { appointmentId: f.booking.id, type: "SERVICE_PAYMENT" }, include: { receipt: true } });
+    assert.match(saved.externalReference!, /^SALON-SERVICE-[a-f0-9-]{36}$/);
+    assert.equal((saved.receipt!.receiptSnapshot as { externalReference: string }).externalReference, saved.externalReference);
+    references.add(saved.externalReference!);
+    assert.equal(await prisma.payment.count({ where: { appointmentId: f.booking.id, type: "SERVICE_PAYMENT" } }), 1);
+    assert.equal(await prisma.receipt.count({ where: { paymentId: saved.id } }), 1);
+    await assert.rejects(settlement.settle(cashierId, { ...input, amount: "121.00" }), { code: "PAYMENT_IDENTITY_CONFLICT" });
+  }
+  assert.equal(references.size, 3);
+});
+
 test("outcome recording, corrections, stale review, full amount and role boundaries", async () => {
   const f = await fixture(); const row = await settlement.lookup(cashierId, f.booking.bookingCode);
   const input = { bookingCode: row.bookingCode, revision: row.revision, services: row.services.map(s => ({ id: s.id, outcome: "PERFORMED" as const })) };

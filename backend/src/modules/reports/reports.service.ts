@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client.js";
+import { Temporal } from "@js-temporal/polyfill";
 import { ApiError } from "../../shared/http.js";
 import { reportPeriod, type ReportQuery, reportKinds } from "./reports.schema.js";
 
@@ -29,20 +30,47 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
         // Query Payment directly: joining carried credits, receipts or commissions would multiply money.
         const captures = await tx.payment.groupBy({ by: ["currency", "type", "method", "status", "satisfiesObligation", "reconciliationStatus"],
           where: { status: { in: ["SUCCEEDED", "REFUNDED"] }, paidAt: period }, orderBy: [{ currency: "asc" }, { type: "asc" }, { method: "asc" }, { status: "asc" }, { satisfiesObligation: "asc" }, { reconciliationStatus: "asc" }], _sum: { amount: true }, _count: { _all: true } });
-        const refunds = await tx.payment.groupBy({ by: ["currency"], where: { status: "REFUNDED", refundedAt: period }, _sum: { amount: true }, _count: { _all: true } });
+        const refunds = await tx.payment.groupBy({ by: ["currency", "method", "type"], where: { status: "REFUNDED", refundedAt: period }, _sum: { amount: true }, _count: { _all: true } });
         const currencies = [...new Set([...captures, ...refunds].map(r => r.currency))].sort();
         return { from: q.from, to: q.to, timeZone, basis: "Captures by paidAt; refunds by refundedAt. Dates are inclusive in salon time. Carried credits are not new collections.",
           totals: currencies.map(currency => {
             const rows = captures.filter(r => r.currency === currency);
             const sum = (selected: typeof rows) => selected.reduce((n, r) => n.plus(r._sum.amount ?? 0), new Prisma.Decimal(0));
-            const gross = sum(rows); const refunded = refunds.find(r => r.currency === currency)?._sum.amount ?? new Prisma.Decimal(0);
+            const gross = sum(rows); const refunded = refunds.filter(r => r.currency === currency).reduce((n, r) => n.plus(r._sum.amount ?? 0), new Prisma.Decimal(0));
             return { currency, captured: amount(gross), refunded: amount(refunded), netCashMovement: amount(gross.minus(refunded)),
               successfulApplied: amount(sum(rows.filter(r => r.status === "SUCCEEDED" && r.satisfiesObligation))),
               successfulUnapplied: amount(sum(rows.filter(r => r.status === "SUCCEEDED" && !r.satisfiesObligation))),
               reconciliationRequired: amount(sum(rows.filter(r => r.status === "SUCCEEDED" && r.reconciliationStatus === "REQUIRED"))) };
           }),
+          methodTotals: currencies.flatMap(currency => ["CASH", "GCASH", "OTHER"].map(method => {
+            const captured = captures.filter(r => r.currency === currency && r.method === method).reduce((n, r) => n.plus(r._sum.amount ?? 0), new Prisma.Decimal(0));
+            const refunded = refunds.filter(r => r.currency === currency && r.method === method).reduce((n, r) => n.plus(r._sum.amount ?? 0), new Prisma.Decimal(0));
+            return { currency, method, captured: amount(captured), refunded: amount(refunded), netCashMovement: amount(captured.minus(refunded)) };
+          })),
+          typeTotals: currencies.flatMap(currency => ["APPOINTMENT_FEE", "SERVICE_PAYMENT"].map(type => {
+            const rows = captures.filter(r => r.currency === currency && r.type === type);
+            return { currency, type, captured: amount(rows.reduce((n, r) => n.plus(r._sum.amount ?? 0), new Prisma.Decimal(0))), count: rows.reduce((n, r) => n + r._count._all, 0) };
+          })),
           breakdown: captures.map(({ _sum, _count, ...row }) => ({ ...row, amount: amount(_sum.amount), count: _count._all })),
         };
+      });
+    },
+    cashierQueue(actorId: string, q: ReportQuery) {
+      return read(actorId, false, async tx => {
+        const where = { startAt: reportPeriod(q, timeZone), status: { in: ["CONFIRMED", "COMPLETED"] as ("CONFIRMED" | "COMPLETED")[] } };
+        const counts = await tx.appointment.groupBy({ by: ["status"], where, _count: { _all: true } });
+        const total = counts.reduce((n, r) => n + r._count._all, 0);
+        const rows = await tx.appointment.findMany({ where, skip: (q.page - 1) * q.pageSize, take: q.pageSize,
+          orderBy: [{ status: "asc" }, { startAt: "asc" }, { id: "asc" }], select: {
+            bookingCode: true, startAt: true, status: true, completionType: true,
+            customer: { select: { firstName: true, lastName: true } },
+            appointmentServices: { where: { membershipStatus: "ACTIVE" }, orderBy: { sequenceNo: "asc" }, select: {
+              serviceNameSnapshot: true, outcome: true, staff: { select: { firstName: true, lastName: true } },
+            } },
+          } });
+        return { from: q.from, to: q.to, timeZone, page: q.page, pageSize: q.pageSize, total,
+          awaitingSettlement: counts.find(r => r.status === "CONFIRMED")?._count._all ?? 0,
+          completed: counts.find(r => r.status === "COMPLETED")?._count._all ?? 0, rows };
       });
     },
     dashboard(actorId: string, q: ReportQuery) {
@@ -50,8 +78,19 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
         const period = reportPeriod(q, timeZone);
         const appointments = await tx.appointment.groupBy({ by: ["status"], where: { startAt: period }, _count: { _all: true } });
         const commissions = await tx.commissionRecord.aggregate({ where: { finalizedAt: period }, _sum: { commissionAmount: true }, _count: { _all: true } });
+        const now = new Date();
+        const pendingFees = await tx.appointment.count({ where: { status: "PENDING_PAYMENT", holdExpiresAt: { gte: now } } });
+        const unsettled = await tx.appointment.count({ where: { status: "CONFIRMED", startAt: { lte: now } } });
+        const reconciliation = await tx.payment.count({ where: { status: "SUCCEEDED", reconciliationStatus: "REQUIRED" } });
+        const until = new Date(Temporal.Instant.from(now.toISOString()).toZonedDateTimeISO(timeZone).add({ days: 7 }).epochMilliseconds);
+        const windows = { startsAt: { lt: until }, endsAt: { gt: now } };
+        const closures = await tx.salonClosure.findMany({ where: windows, orderBy: { startsAt: "asc" }, take: 20,
+          select: { id: true, startsAt: true, endsAt: true, reason: true } });
+        const absences = await tx.staffUnavailability.findMany({ where: windows, orderBy: { startsAt: "asc" }, take: 20,
+          select: { id: true, staffId: true, startsAt: true, endsAt: true, reason: true, staff: { select: { firstName: true, lastName: true } } } });
         return { timeZone, appointments: appointments.map(r => ({ status: r.status, count: r._count._all })),
-          finalizedCommissions: amount(commissions._sum.commissionAmount), commissionCount: commissions._count._all };
+          finalizedCommissions: amount(commissions._sum.commissionAmount), commissionCount: commissions._count._all,
+          attention: { pendingFees, unsettled, reconciliation }, scheduling: { until, closures, absences } };
       });
     },
     list(actorId: string, kind: Kind, q: ReportQuery) {

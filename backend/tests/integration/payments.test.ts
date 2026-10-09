@@ -153,6 +153,25 @@ test("distinct captures are preserved for reconciliation without a second confir
   assert.equal((await prisma.payment.aggregate({ where: { appointmentId: f.row.id, status: "SUCCEEDED" }, _sum: { amount: true } }))._sum.amount?.toFixed(2), "200.00");
 });
 
+test("manual fee payments generate unique references for every method and reuse them on retries", async () => {
+  const references = new Set<string>();
+  for (const method of ["CASH", "GCASH", "OTHER"] as const) {
+    const f = await heldBooking();
+    const { externalReference: _unused, ...base } = manual(f.row.bookingCode);
+    const input = { ...base, method };
+    const [first, retry] = await Promise.all([payments.manual(cashierId, input), payments.manual(cashierId, input)]);
+    assert.equal(first.id, retry.id);
+    assert.equal(first.receipt!.receiptNumber, retry.receipt!.receiptNumber);
+    const saved = await prisma.payment.findUniqueOrThrow({ where: { id: first.id } });
+    assert.match(saved.externalReference!, /^SALON-FEE-[a-f0-9-]{36}$/);
+    assert.equal((first.receipt!.receiptSnapshot as { externalReference: string }).externalReference, saved.externalReference);
+    assert.equal(await prisma.payment.count({ where: { appointmentId: f.row.id } }), 1);
+    references.add(saved.externalReference!);
+    await assert.rejects(payments.manual(cashierId, { ...input, method: method === "CASH" ? "GCASH" : "CASH" }), { code: "PAYMENT_IDENTITY_CONFLICT" });
+  }
+  assert.equal(references.size, 3);
+});
+
 test("checkout retries reuse their key; signed success and retries issue one confirmation and staff receipt", async () => {
   const f = await heldBooking();
   const key = randomUUID();

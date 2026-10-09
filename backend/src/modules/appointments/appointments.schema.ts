@@ -31,3 +31,12 @@ export const changeSchema = changeSearchSchema.safeExtend({ startAt: z.iso.datet
 export const cancellationSchema = guestAccessSchema.extend({ reason: z.string().trim().max(1000).optional() }).strict();
 export type ChangeInput = z.infer<typeof changeSchema>;
 export type ChangeSearch = z.infer<typeof changeSearchSchema>;
+
+export const appointmentListQuery = z.object({
+  cursor: z.uuid().optional(),
+  from: z.iso.date().optional(), to: z.iso.date().optional(),
+  status: z.enum(["PENDING_PAYMENT", "CONFIRMED", "COMPLETED", "CANCELLED", "NO_SHOW", "EXPIRED"]).optional(),
+  attention: z.enum(["pending-fees", "unsettled"]).optional(),
+  staffId: z.uuid().optional(), search: z.string().trim().max(100).optional(),
+}).strict().refine(q => !q.from || !q.to || q.from <= q.to, "The end date must follow the start date.");
+export type AppointmentListQuery = z.infer<typeof appointmentListQuery>;

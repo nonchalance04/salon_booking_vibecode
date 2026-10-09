@@ -6,7 +6,8 @@ import { calculateAvailability, planAt, type AvailabilityData } from "../availab
 import type { AvailabilityInput } from "../availability/availability.schema.js";
 import { createGuestCredentials, validGuestToken } from "./appointments.security.js";
 import { guestSelect, guestView, reservationTransaction, RestartReservation } from "./appointments.service.js";
-import type { ChangeInput, ChangeSearch } from "./appointments.schema.js";
+import { Temporal } from "@js-temporal/polyfill";
+import type { AppointmentListQuery, ChangeInput, ChangeSearch } from "./appointments.schema.js";
 
 type Tx = Prisma.TransactionClient;
 const include = { bookingPolicyVersion: true, customer: true, appointmentServices: { orderBy: { sequenceNo: "asc" as const } }, recoveryAppointment: true };
@@ -192,12 +193,28 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
         return { marked: true };
       });
     },
-    async list(actorId: string, cursor?: string) {
+    async list(actorId: string, cursor?: string, filters: AppointmentListQuery = {}) {
       return prisma.$transaction(async tx => {
         await admin(tx, actorId);
-        const rows = await tx.appointment.findMany({ take: 51, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-          orderBy: { id: "asc" }, select: { ...guestSelect, id: true } });
         const now = await freshTime(tx);
+        const where: Prisma.AppointmentWhereInput = {
+          ...(filters.status ? { status: filters.status } : {}),
+          ...(filters.from || filters.to ? { startAt: {
+            ...(filters.from ? { gte: new Date(Temporal.PlainDate.from(filters.from).toZonedDateTime(timeZone).epochMilliseconds) } : {}),
+            ...(filters.to ? { lt: new Date(Temporal.PlainDate.from(filters.to).add({ days: 1 }).toZonedDateTime(timeZone).epochMilliseconds) } : {}),
+          } } : {}),
+          ...(filters.staffId ? { appointmentServices: { some: { staffId: filters.staffId, membershipStatus: "ACTIVE" } } } : {}),
+          ...(filters.search ? { OR: [
+            { bookingCode: { contains: filters.search, mode: "insensitive" } },
+            { customer: { firstName: { contains: filters.search, mode: "insensitive" } } },
+            { customer: { lastName: { contains: filters.search, mode: "insensitive" } } },
+            { customer: { AND: filters.search.split(/\s+/).map(word => ({ OR: [ { firstName: { contains: word, mode: "insensitive" as const } }, { lastName: { contains: word, mode: "insensitive" as const } } ] })) } },
+          ] } : {}),
+        };
+        if (filters.attention === "pending-fees") { where.status = "PENDING_PAYMENT"; where.holdExpiresAt = { gte: now }; }
+        if (filters.attention === "unsettled") { where.status = "CONFIRMED"; where.AND = [{ startAt: { lte: now } }]; }
+        const rows = await tx.appointment.findMany({ where, take: 51, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          orderBy: { id: "asc" }, select: { ...guestSelect, id: true } });
         return { appointments: rows.slice(0, 50).map(row => guestView(row, now, timeZone)), nextCursor: rows.length > 50 ? rows[49]!.id : null };
       });
     },

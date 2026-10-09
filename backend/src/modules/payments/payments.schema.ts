@@ -7,7 +7,7 @@ export const testCaptureSchema = guestAccessSchema.extend({ paymentId: z.uuid(),
 export const manualPaymentSchema = z.object({
   bookingCode: z.string().min(1).max(100), idempotencyKey: z.uuid(), amount: money,
   currency: z.literal("PHP"), method: z.enum(["CASH", "GCASH", "OTHER"]),
-  externalReference: z.string().trim().min(1).max(120),
+  externalReference: z.string().trim().min(1).max(120).optional(),
 }).strict();
 export type ManualPaymentInput = z.infer<typeof manualPaymentSchema>;
 export const receiptSchema = z.object({ paymentId: z.uuid() }).strict();

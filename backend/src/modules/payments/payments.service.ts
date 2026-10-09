@@ -6,7 +6,7 @@ import { coversReservation } from "../scheduling/coverage.js";
 import { validGuestToken } from "../appointments/appointments.security.js";
 import type { PaymentProvider, VerifiedPayment } from "./payment-provider.js";
 import { TestPaymentProvider } from "./payment-provider.js";
-import type { ManualPaymentInput } from "./payments.schema.js";
+import { manualPaymentSchema, type ManualPaymentInput } from "./payments.schema.js";
 
 type Tx = Prisma.TransactionClient;
 function metadata(payment: Payment): Prisma.JsonObject {
@@ -288,7 +288,10 @@ export function createPaymentsService(prisma: PrismaClient, provider?: PaymentPr
       if (!payment || payment.appointmentId !== appointment.id || payment.provider !== provider.name) throw new ApiError(404, "NOT_FOUND", "Payment not found.");
       return processVerified(await provider.simulate(requestFor(payment, appointment), outcome));
     },
-    async manual(actorId: string, input: ManualPaymentInput) {
+    async manual(actorId: string, raw: ManualPaymentInput) {
+      const input = manualPaymentSchema.parse(raw);
+      // Stable across retries; a salon reference, not a provider transaction ID.
+      const reference = input.externalReference ?? `SALON-FEE-${input.idempotencyKey}`;
       return transaction(prisma, async tx => {
         const appointment = await tx.appointment.findUnique({ where: { bookingCode: input.bookingCode } });
         if (!appointment) throw new ApiError(404, "NOT_FOUND", "Appointment not found.");
@@ -296,15 +299,15 @@ export function createPaymentsService(prisma: PrismaClient, provider?: PaymentPr
         await authorize(tx, actorId);
         if (!row.appointmentFeeAmount.equals(input.amount)) throw new ApiError(400, "AMOUNT_MISMATCH", "Record the exact appointment fee shown for this booking.");
         const key = `manual:${input.idempotencyKey}`;
-        const matches = await tx.payment.findMany({ where: { OR: [{ idempotencyKey: key }, { provider: "manual", externalReference: input.externalReference }] } });
+        const matches = await tx.payment.findMany({ where: { OR: [{ idempotencyKey: key }, { provider: "manual", externalReference: reference }] } });
         if (matches.length > 1) throw conflict();
         let payment = matches[0];
         if (payment && (payment.appointmentId !== row.id || payment.provider !== "manual" || payment.method !== input.method ||
-          payment.externalReference !== input.externalReference || !payment.amount.equals(input.amount) || payment.currency !== input.currency)) throw conflict();
+          payment.externalReference !== reference || !payment.amount.equals(input.amount) || payment.currency !== input.currency)) throw conflict();
         if (payment) payment = await lockPayment(tx, payment.id);
         else payment = await tx.payment.create({ data: { appointmentId: row.id, type: "APPOINTMENT_FEE", provider: "manual", method: input.method,
-          status: "PENDING", amount: input.amount, currency: input.currency, idempotencyKey: key, externalReference: input.externalReference, recordedByUserId: actorId } });
-        return settle(tx, row, payment, { paymentId: payment.id, appointmentId: row.id, reference: input.externalReference,
+          status: "PENDING", amount: input.amount, currency: input.currency, idempotencyKey: key, externalReference: reference, recordedByUserId: actorId } });
+        return settle(tx, row, payment, { paymentId: payment.id, appointmentId: row.id, reference,
           amount: input.amount, currency: input.currency, status: "SUCCEEDED", paidAt: (await freshTime(tx)).toISOString() }, actorId, timeZone);
       });
     },

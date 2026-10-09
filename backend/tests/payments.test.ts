@@ -30,5 +30,7 @@ test("test payments fail closed in production, are opt-in, and require a secret"
 test("manual money inputs reject floats, excess precision, unknown fields and non-PHP currency", () => {
   const input = { bookingCode: "SL-test", idempotencyKey: randomUUID(), amount: "100.00", currency: "PHP", method: "CASH", externalReference: "cash-001" };
   assert.ok(manualPaymentSchema.safeParse(input).success);
+  const { externalReference: _unused, ...automatic } = input;
+  for (const method of ["CASH", "GCASH", "OTHER"]) assert.ok(manualPaymentSchema.safeParse({ ...automatic, method }).success);
   for (const changes of [{ amount: 100 }, { amount: "100.001" }, { currency: "USD" }, { status: "SUCCEEDED" }, { externalReference: " " }]) assert.equal(manualPaymentSchema.safeParse({ ...input, ...changes }).success, false);
 });

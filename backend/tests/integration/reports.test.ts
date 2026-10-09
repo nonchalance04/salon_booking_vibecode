@@ -10,6 +10,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../generated/prisma/client.js";
 import { createDatabasePool } from "../../src/database/pool.js";
 import { createReportsService } from "../../src/modules/reports/reports.service.js";
+import { createAppointmentChangesService } from "../../src/modules/appointments/appointment-changes.service.js";
+import { appointmentListQuery } from "../../src/modules/appointments/appointments.schema.js";
 import { reportQuery } from "../../src/modules/reports/reports.schema.js";
 import { createApp } from "../../src/app/app.js";
 import { createApiRouter } from "../../src/app/routes.js";
@@ -93,6 +95,39 @@ test("reports preserve service, receipt and commission snapshots after catalog c
   assert.equal(first.rows.length, 1); assert.notDeepEqual(first.rows, second.rows); assert.equal(first.total, second.total);
 });
 
+test("cashier queue uses salon dates, paginates and only exposes settlement information", async () => {
+  const cashier = await actor("CASHIER");
+  const queueQuery = reportQuery.parse({ from: "2026-10-07", to: "2026-10-07", pageSize: 1 });
+  await appointment({ startAt: new Date("2026-10-06T16:00Z"), status: "CONFIRMED" });
+  await appointment({ startAt: new Date("2026-10-07T00:00Z"), status: "COMPLETED", completionType: "NO_SERVICE_CLOSURE" });
+  await appointment({ startAt: new Date("2026-10-07T16:00Z"), status: "CONFIRMED" });
+  await appointment({ startAt: new Date("2026-10-07T00:00Z"), status: "CANCELLED" });
+  const first = await reports.cashierQueue(cashier.id, queueQuery);
+  const second = await reports.cashierQueue(cashier.id, { ...queueQuery, page: 2 });
+  assert.equal(first.total, 2); assert.equal(first.awaitingSettlement, 1); assert.equal(first.completed, 1);
+  assert.equal(first.rows.length, 1); assert.notEqual(first.rows[0]!.bookingCode, second.rows[0]!.bookingCode);
+  assert.doesNotMatch(JSON.stringify(first), /guestAccess|commission|password|phone|email/);
+  await prisma.user.update({ where: { id: cashier.id }, data: { isActive: false } });
+  try { await assert.rejects(reports.cashierQueue(cashier.id, queueQuery), { code: "UNAUTHORIZED" }); }
+  finally { await prisma.user.update({ where: { id: cashier.id }, data: { isActive: true } }); }
+});
+
+test("cashier method totals subtract refunds by refund date and original method", async () => {
+  const cashier = await actor("CASHIER"); const a = await appointment();
+  const current = new Date("2026-10-08T00:00Z"); const previous = new Date("2026-10-07T00:00Z");
+  await payment(a.id, "100.10", { paidAt: current, satisfiesObligation: true });
+  await payment(a.id, "200.20", { paidAt: current, type: "SERVICE_PAYMENT", method: "GCASH", satisfiesObligation: true });
+  await payment(a.id, "10.05", { paidAt: previous, status: "REFUNDED", refundedAt: current });
+  await payment(a.id, "20.10", { paidAt: previous, status: "REFUNDED", refundedAt: current, method: "GCASH" });
+  await payment(a.id, "999.00", { paidAt: null, status: "FAILED" });
+  const result = await reports.collections(cashier.id, reportQuery.parse({ from: "2026-10-08", to: "2026-10-08" }));
+  assert.equal(result.totals[0]!.refunded, "30.15"); assert.equal(result.totals[0]!.netCashMovement, "270.15");
+  assert.deepEqual(result.methodTotals.map(t => [t.method, t.captured, t.refunded, t.netCashMovement]), [
+    ["CASH", "100.10", "10.05", "90.05"], ["GCASH", "200.20", "20.10", "180.10"], ["OTHER", "0.00", "0.00", "0.00"],
+  ]);
+  assert.deepEqual(result.typeTotals.map(t => [t.type, t.captured, t.count]), [["APPOINTMENT_FEE", "100.10", 1], ["SERVICE_PAYMENT", "200.20", 1]]);
+});
+
 test("Admin audit view redacts legacy secrets and report services reject Cashier/private access", async () => {
   const admin = await actor(); const cashier = await actor("CASHIER");
   await prisma.auditLog.create({ data: { actorType: "ADMIN", actorUserId: admin.id, action: "TEST", entityType: "Appointment", entityId: randomUUID(), createdAt: day, beforeData: { guestAccessTokenHash: "secret", nested: { passwordHash: "secret", amount: "1.00" } } } });
@@ -116,8 +151,11 @@ test("report HTTP authorization, cache controls, validation and public chatbot b
   const query = "?from=2026-10-04&to=2026-10-04";
   try {
     assert.equal((await fetch(`${base}/reports/collections${query}`)).status, 401);
+    assert.equal((await fetch(`${base}/reports/cashier-queue${query}`)).status, 401);
     for (const kind of ["dashboard", "appointments", "payments", "receipts", "commissions", "audit"]) assert.equal((await fetch(`${base}/reports/${kind}${query}`, { headers: { Cookie: cashierCookie } })).status, 403);
     const summary = await fetch(`${base}/reports/collections${query}`, { headers: { Cookie: cashierCookie } }); assert.equal(summary.status, 200); assert.equal(summary.headers.get("cache-control"), "no-store");
+    const queue = await fetch(`${base}/reports/cashier-queue${query}`, { headers: { Cookie: cashierCookie } }); assert.equal(queue.status, 200); assert.equal(queue.headers.get("cache-control"), "no-store");
+    assert.equal((await fetch(`${base}/reports/cashier-queue?from=bad`, { headers: { Cookie: cashierCookie } })).status, 400);
     assert.equal((await fetch(`${base}/reports/payments?from=bad`, { headers: { Cookie: adminCookie } })).status, 400);
     const chat = await fetch(`${base}/chatbot`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "services and prices" }) });
     assert.equal(chat.status, 200); const reply = await chat.json(); assert.equal(reply.mode, "guided"); assert.doesNotMatch(reply.answer, /New name/);
@@ -126,4 +164,47 @@ test("report HTTP authorization, cache controls, validation and public chatbot b
     assert.equal(await prisma.appointment.count(), counts);
     const invalid = await fetch(`${base}/chatbot`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "hi", guestToken: "secret" }) }); assert.equal(invalid.status, 400);
   } finally { server.close(); await once(server, "close"); }
+});
+
+
+test("admin attention excludes expired holds and resolved captures and shows upcoming schedule windows", async () => {
+  const admin = await actor(); const before = await reports.dashboard(admin.id, q);
+  const now = Date.now();
+  await appointment({ status: "PENDING_PAYMENT", holdExpiresAt: new Date(now + 3600000) });
+  await appointment({ status: "PENDING_PAYMENT", holdExpiresAt: new Date(now - 3600000) });
+  const capture = await appointment();
+  await payment(capture.id, "10.00", { reconciliationStatus: "REQUIRED" });
+  await payment(capture.id, "10.00", { reconciliationStatus: "REQUIRED", status: "REFUNDED" });
+  const closure = await prisma.salonClosure.create({ data: { startsAt: new Date(now + 3600000), endsAt: new Date(now + 7200000), createdByUserId: admin.id, reason: "Dashboard closure" } });
+  const result = await reports.dashboard(admin.id, q);
+  assert.equal(result.attention.pendingFees, before.attention.pendingFees + 1);
+  assert.equal(result.attention.reconciliation, before.attention.reconciliation + 1);
+  assert.ok(result.scheduling.closures.some(row => row.id === closure.id));
+  assert.doesNotMatch(JSON.stringify(result), /guestAccessToken|passwordHash/);
+});
+
+test("admin appointment filters cover full pagination, salon-date boundaries, names, staff and active holds", async () => {
+  const admin = await actor(); const cashier = await actor("CASHIER");
+  const service = createAppointmentChangesService(prisma, "Asia/Manila");
+  const label = `Filter${randomUUID().slice(0, 8)}`;
+  const start = new Date("2030-06-11T16:00:00Z");
+  const items = [];
+  for (let i = 0; i < 52; i++) items.push(await appointment({ startAt: start, endAt: new Date(+start + 1800000), customer: { create: { firstName: label, lastName: "Guest", phone: "0" } } }));
+  await appointment({ startAt: new Date("2030-06-12T16:00:00Z"), customer: { create: { firstName: label, lastName: "Guest", phone: "0" } } });
+  const filters = appointmentListQuery.parse({ from: "2030-06-12", to: "2030-06-12", status: "CONFIRMED", search: `${label} Guest` });
+  const first = await service.list(admin.id, undefined, filters);
+  assert.equal(first.appointments.length, 50); assert.ok(first.nextCursor);
+  const second = await service.list(admin.id, first.nextCursor!, filters);
+  assert.equal(second.appointments.length, 2); assert.equal(second.nextCursor, null);
+  assert.equal(new Set([...first.appointments, ...second.appointments].map(row => row.bookingCode)).size, 52);
+  const staff = await prisma.staff.findFirstOrThrow(); const catalog = await prisma.service.findFirstOrThrow(); const a = items[0]!;
+  await prisma.appointmentService.create({ data: { appointmentId: a.id, staffId: staff.id, serviceId: catalog.id, assignmentMode: "SPECIFIC", sequenceNo: 1, serviceNameSnapshot: "Filter service", priceSnapshot: "50", durationMinutesSnapshot: 30, bufferMinutesSnapshot: 0, commissionRateSnapshot: "0.4", scheduledStartAt: start, scheduledEndAt: a.endAt, reservedUntilAt: a.endAt } });
+  assert.equal((await service.list(admin.id, undefined, { ...filters, staffId: staff.id })).appointments.length, 1);
+  const active = await appointment({ status: "PENDING_PAYMENT", holdExpiresAt: new Date(Date.now() + 3600000), customer: { create: { firstName: label, lastName: "Guest", phone: "0" } } });
+  await appointment({ status: "PENDING_PAYMENT", holdExpiresAt: new Date(Date.now() - 3600000), customer: { create: { firstName: label, lastName: "Guest", phone: "0" } } });
+  const pending = await service.list(admin.id, undefined, { search: label, attention: "pending-fees" });
+  assert.deepEqual(pending.appointments.map(row => row.bookingCode), [active.bookingCode]);
+  await assert.rejects(service.list(cashier.id, undefined, filters), { code: "FORBIDDEN" });
+  assert.equal(appointmentListQuery.safeParse({ from: "2030-06-13", to: "2030-06-12" }).success, false);
+  assert.equal(appointmentListQuery.safeParse({ status: "MADE_UP" }).success, false);
 });
