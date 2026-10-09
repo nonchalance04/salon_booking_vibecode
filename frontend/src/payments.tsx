@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
-export type FeePayment = { id: string; amount: string; status: string; reconciliationStatus: string; receipt: { receiptNumber: string; receiptSnapshot?: Record<string, unknown> } | null };
+export type FeePayment = { id: string; amount: string; status: string; externalReference?: string | null; reconciliationStatus: string; receipt: { receiptNumber: string; receiptSnapshot?: Record<string, unknown> } | null };
 export function FeePaymentControls({ bookingCode, token, onChange, pending }: { bookingCode: string; token: string; onChange: () => Promise<void>; pending?: FeePayment }) {
   const [options, setOptions] = useState<{ onlineAvailable: boolean; testMode: boolean; sandbox: boolean } | null>(null);
   const [payment, setPayment] = useState<FeePayment | null>(pending ?? null);
@@ -56,13 +56,14 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
 export function FeePaymentHistory({ payments }: { payments: FeePayment[] }) {
   return payments.length ? <section aria-label="Appointment-fee payments"><h3>Appointment-fee payments</h3>{payments.map(p => <div key={p.id} className="payment-record">
     <p>PHP {p.amount} · {p.status}{p.reconciliationStatus === "REQUIRED" && " · Salon review required"}</p>
+    {p.externalReference && <p>Payment reference: {p.externalReference}</p>}
     {p.reconciliationStatus === "REQUIRED" && <p>This payment was not applied to the booking fee. Contact the salon for reconciliation.</p>}
     {p.receipt && <details><summary>Receipt {p.receipt.receiptNumber}</summary><ReceiptDetails snapshot={p.receipt.receiptSnapshot} /></details>}
   </div>)}</section> : null;
 }
 function ReceiptDetails({ snapshot }: { snapshot?: Record<string, unknown> }) {
   if (!snapshot) return null;
-  return <dl>{["bookingCode", "customerName", "amount", "currency", "method", "paidAt"].map(key => <div key={key}><dt>{({ bookingCode: "Booking", customerName: "Customer", amount: "Amount", currency: "Currency", method: "Method", paidAt: "Paid at" } as Record<string, string>)[key]}</dt><dd>{String(snapshot[key] ?? "")}</dd></div>)}</dl>;
+  return <dl>{["bookingCode", "customerName", "amount", "currency", "method", "externalReference", "paidAt"].map(key => <div key={key}><dt>{({ bookingCode: "Booking", customerName: "Customer", amount: "Amount", currency: "Currency", method: "Method", externalReference: "Payment reference", paidAt: "Paid at" } as Record<string, string>)[key]}</dt><dd>{String(snapshot[key] ?? "")}</dd></div>)}</dl>;
 }
 type StaffBooking = { bookingCode: string; status: string; appointmentFeeAmount: string; customer: { firstName: string; lastName: string }; payments: FeePayment[] };
 type ReviewPayment = FeePayment & { provider: string; method: string; externalReference: string | null; reconciliationReason: string | null; appointment: { bookingCode: string; status: string } };
@@ -93,20 +94,20 @@ export function PaymentsWorkspace({ admin }: { admin: boolean }) {
     const data = new FormData(event.currentTarget);
     await act(async () => {
       const { payment } = await api<{ payment: FeePayment & { appointment: { status: string } } }>("/payments/manual", { method: "POST", body: JSON.stringify({ bookingCode: booking.bookingCode,
-        amount: booking.appointmentFeeAmount, currency: "PHP", method: String(data.get("method")), externalReference: String(data.get("reference")).trim(), idempotencyKey: key.current }) });
+        amount: booking.appointmentFeeAmount, currency: "PHP", method: String(data.get("method")), idempotencyKey: key.current }) });
       key.current = crypto.randomUUID();
-      setNotice(`Payment recorded${payment.reconciliationStatus === "REQUIRED" ? " for reconciliation" : ""}. Booking status: ${payment.appointment.status.replaceAll("_", " ")}.`);
+      setNotice(`Payment recorded${payment.reconciliationStatus === "REQUIRED" ? " for reconciliation" : ""}. Booking status: ${payment.appointment.status.replaceAll("_", " ")}.${payment.externalReference ? ` Payment reference: ${payment.externalReference}.` : ""}`);
       await lookup(booking.bookingCode); if (admin) await loadReview();
     });
   }
-  return <section className="payments-workspace"><h2>Appointment-fee payments</h2><p>Record money already received using its original transaction or cash collection reference.</p>
+  return <section className="payments-workspace"><h2>Appointment-fee payments</h2><p>Record money already received. A payment reference is generated automatically for every payment method.</p>
     <form className="account-form" onSubmit={event => { event.preventDefault(); const code = String(new FormData(event.currentTarget).get("code")).trim(); void act(async () => { await lookup(code); key.current = crypto.randomUUID(); }); }}>
       <label>Booking code<input name="code" required maxLength={100} /></label><button disabled={busy}>Find booking</button>
     </form>
     {booking && <div className="account-form"><h3>{booking.bookingCode} · {booking.customer.firstName} {booking.customer.lastName}</h3><p>Status: {booking.status} · Appointment fee: PHP {booking.appointmentFeeAmount}</p>
       {booking.status !== "PENDING_PAYMENT" && <p>Recording a separate capture here will flag it for reconciliation and will not restore or confirm the booking.</p>}
       <form onSubmit={event => void record(event)} key={booking.bookingCode}><fieldset disabled={busy}><label>Payment method<select name="method"><option value="CASH">Cash</option><option value="GCASH">GCash</option><option value="OTHER">Other</option></select></label>
-        <label>Original collection / transaction reference<input name="reference" required maxLength={120} /></label>
+        <p>Payment reference: generated automatically when you record the payment.</p>
         <label className="checkbox"><input type="checkbox" required /> I have verified receipt of PHP {booking.appointmentFeeAmount}.</label>
         <button className="primary" disabled={busy}>Record received appointment fee</button></fieldset></form>
       <FeePaymentHistory payments={booking.payments} />

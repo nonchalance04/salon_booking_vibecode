@@ -65,7 +65,7 @@ async function lockPayment(tx: Tx, id: string) {
 }
 async function view(tx: Tx, id: string) {
   const payment = await tx.payment.findUniqueOrThrow({ where: { id }, select: {
-    id: true, status: true, amount: true, currency: true, method: true, provider: true, paidAt: true,
+    id: true, status: true, amount: true, currency: true, method: true, provider: true, paidAt: true, externalReference: true,
     satisfiesObligation: true, reconciliationStatus: true,
     receipt: { select: { receiptNumber: true, issuedAt: true, receiptSnapshot: true } },
     appointment: { select: { bookingCode: true, status: true } },
@@ -173,7 +173,7 @@ export function createPaymentsService(prisma: PrismaClient, provider?: PaymentPr
         const row = await tx.appointment.findUnique({ where: { bookingCode }, select: {
           bookingCode: true, status: true, holdExpiresAt: true, appointmentFeeAmount: true,
           customer: { select: { firstName: true, lastName: true } },
-          payments: { where: { type: "APPOINTMENT_FEE" }, select: { id: true, status: true, amount: true, reconciliationStatus: true,
+          payments: { where: { type: "APPOINTMENT_FEE" }, select: { id: true, status: true, amount: true, reconciliationStatus: true, externalReference: true,
             receipt: { select: { receiptNumber: true, receiptSnapshot: true } } }, orderBy: { createdAt: "asc" } },
         } });
         if (!row) throw new ApiError(404, "NOT_FOUND", "Appointment not found.");
