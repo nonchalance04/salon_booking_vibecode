@@ -41,7 +41,7 @@ after(async () => {
 });
 const sent: NotificationMessage[] = [];
 function service(provider: NotificationProvider = createTestNotificationProvider(m => sent.push(m)), overrides: Partial<NotificationOptions> = {}) {
-  return createNotificationsService(prisma, { providers: { EMAIL: provider, SMS: provider }, timeZone: "Asia/Manila", leaseMs: 1000, timeoutMs: 500, maxAttempts: 3, retryBaseMs: 10000, reminderHours: 24, ...overrides });
+  return createNotificationsService(prisma, { smsPolicy: "all", publicSiteUrl: "https://salon.example.com", bookingLinkSecret: "s".repeat(32), providers: { EMAIL: provider, SMS: provider }, timeZone: "Asia/Manila", leaseMs: 1000, timeoutMs: 500, maxAttempts: 3, retryBaseMs: 10000, reminderHours: 24, ...overrides });
 }
 async function queue(extra: object = {}) {
   return prisma.notificationQueue.create({ data: { eventType: "BOOKING_CONFIRMED", channel: "EMAIL", recipient: "guest@example.test", status: "PENDING", scheduledAt: new Date(Date.now() - 1000), payload: { schemaVersion: 1, bookingCode: "BOOK-123" }, ...extra } });
@@ -195,4 +195,57 @@ test("reminder pagination progresses past existing rows", async () => {
   assert.equal(await worker.enqueueReminders(2), 2);
   assert.equal(await worker.enqueueReminders(2), 1);
   assert.equal(await worker.enqueueReminders(2), 0);
+});
+
+test("minimal SMS sends one combined confirmation and skips old separate notifications", async () => {
+  const { validGuestAccess, tokenHash } = await import("../../src/modules/appointments/appointments.security.js");
+  const { bookingLinkToken } = await import("../../src/modules/notifications/minimal-sms.js");
+  const booking = await appointment({}, null);
+  await prisma.payment.create({ data: { appointmentId: booking.id, type: "APPOINTMENT_FEE", status: "SUCCEEDED", satisfiesObligation: true, amount: "100.00", method: "CASH", provider: "manual", idempotencyKey: randomUUID(), externalReference: randomUUID(), paidAt: new Date() } });
+  const confirmation = await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567" });
+  const others = [];
+  for (const eventType of ["PAYMENT_RECEIVED", "APPOINTMENT_COMPLETED", "APPOINTMENT_REMINDER"]) others.push(await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567", eventType }));
+  const messages: NotificationMessage[] = [];
+  const worker = service(createTestNotificationProvider(m => messages.push(m)), { smsPolicy: "minimal", publicSiteUrl: "https://salon.example.com", bookingLinkSecret: "s".repeat(32) });
+  while (await worker.processNext()) { /* drain without real SMS */ }
+  assert.equal(messages.length, 1); assert.match(messages[0]!.text, /Fee paid.*Confirmed/);
+  assert.equal((await stored(confirmation.id)).status, "SENT");
+  for (const row of others) { assert.equal((await stored(row.id)).status, "SKIPPED"); assert.equal((await stored(row.id)).lastError, "SMS_MINIMAL_POLICY"); }
+  const token = bookingLinkToken("s".repeat(32), confirmation.id);
+  assert.equal(await validGuestAccess(prisma, token, booking), true);
+  const other = await appointment(); assert.equal(await validGuestAccess(prisma, token, other), false);
+  assert.ok(await prisma.appointmentGuestSession.findUnique({ where: { tokenHash: tokenHash(token) } }));
+  assert.equal(JSON.stringify((await stored(confirmation.id)).payload).includes(token), false);
+});
+
+test("minimal policy generates email reminders only and preserves SMS cancellation notices", async () => {
+  const smsBooking = await appointment({}, null); await appointment();
+  const messages: NotificationMessage[] = [];
+  const worker = service(createTestNotificationProvider(m => messages.push(m)), { smsPolicy: "minimal" });
+  assert.equal(await worker.enqueueReminders(), 1);
+  assert.equal(await prisma.notificationQueue.count({ where: { channel: "SMS", eventType: "APPOINTMENT_REMINDER" } }), 0);
+  await queue({ appointmentId: smsBooking.id, channel: "SMS", recipient: "09171234567", eventType: "BOOKING_CANCELLED" });
+  while (await worker.processNext()) { /* drain */ }
+  assert.equal(messages.filter(m => m.channel === "SMS").length, 1);
+  assert.match(messages.find(m => m.channel === "SMS")!.text, /cancelled/);
+});
+
+test("minimal SMS avoids retries on uncertain delivery or reclaimed claims", async () => {
+  let calls = 0;
+  const worker = service({ async send() { calls++; throw new Error("uncertain timeout"); } }, { smsPolicy: "minimal" });
+  const failed = await queue({ channel: "SMS", recipient: "09171234567", eventType: "BOOKING_CANCELLED" });
+  await worker.processNext(); assert.equal((await stored(failed.id)).status, "FAILED");
+  assert.equal(await worker.processNext(), false); assert.equal(calls, 1);
+  const abandoned = await queue({ channel: "SMS", recipient: "09171234567", eventType: "BOOKING_CANCELLED" });
+  await worker.claim(); await expire(abandoned.id); await worker.processNext();
+  assert.equal((await stored(abandoned.id)).status, "SKIPPED"); assert.equal((await stored(abandoned.id)).lastError, "SMS_DELIVERY_UNCERTAIN");
+  assert.equal(calls, 1);
+});
+
+test("obsolete confirmation never sends a misleading message or creates a link", async () => {
+  const booking = await appointment({ status: "CANCELLED" }, null);
+  const row = await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567" });
+  await service({ async send() { assert.fail("obsolete confirmation"); } }, { smsPolicy: "minimal" }).processNext();
+  assert.equal((await stored(row.id)).status, "SKIPPED");
+  assert.equal((await stored(row.id)).lastError, "CONFIRMATION_OBSOLETE");
 });

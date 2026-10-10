@@ -325,3 +325,27 @@ changing scheduling/financial rules:
 - Change the adapter endpoint to https://dashboard.philsms.com/api/v3/sms/send.
   Keep bearer authentication, payload, routing, retry rules and queue history.
   No live SMS was sent during diagnosis; existing FAILED rows are not reset.
+
+## Automatic cashier payment references — 2026-10-09
+
+- At the user's request, cashier appointment-fee and service-payment forms no
+  longer require a typed collection or transaction reference for any method.
+- The server derives `SALON-FEE-<idempotency UUID>` or
+  `SALON-SERVICE-<idempotency UUID>` when the request omits a reference. Separate
+  namespaces prevent fee/service collisions; retries retain the same reference,
+  payment, and receipt. Existing identity and amount conflict checks still apply.
+- These identifiers are salon collection references. Online provider transaction
+  identities continue to come from the provider integration. Staff still verify
+  that money was received before recording a manual payment.
+- Store the generated reference in the existing manual-provider reference field
+  and immutable receipt snapshot. Historical values are preserved, and the API
+  still accepts validated explicit references for compatibility with older clients.
+  This supersedes the earlier requirement to type an original collection reference.
+
+## 2026-10-10 — TextBee appointment OTP access
+
+TextBee is an optional SMS transport for appointment access and existing SMS notifications. OTPs authorize only the matched appointment; they do not establish payment success. The backend stores keyed OTP digests, enforces database-backed rate limits and single-use consumption, and grants a two-hour opaque HttpOnly session. Original guest links continue working without rotation. Unknown details and send failures have a neutral response. The gateway's queue acceptance is not delivery. See `TEXTBEE_SETUP.md` for activation and operating limits.
+
+## 2026-10-10 — Reduce SMS usage
+
+Default notification SMS policy is minimal. Worker coalesces the normal customer outcome into the confirmation SMS, using current confirmed appointment state and verified fee payment. Redundant outbox jobs are retained as SKIPPED rather than deleted or sent. Public access links use deterministic purpose-separated HMAC tokens, stored only as appointment-scoped hashes; the frontend removes the fragment before API use. Combined messages are bounded to one 160-character ASCII segment. Minimal SMS errors/reclaimed claims require investigation rather than automatic resend. Customer-reachable PUBLIC_SITE_URL must be explicitly configured.

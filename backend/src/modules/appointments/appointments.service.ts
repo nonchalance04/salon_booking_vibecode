@@ -3,7 +3,7 @@ import { ApiError } from "../../shared/http.js";
 import { lockSalon, lockStaff, freshTime } from "../scheduling/coordination.js";
 import { loadAvailabilityData } from "../availability/availability.data.js";
 import { localDay, planAt } from "../availability/availability.engine.js";
-import { createGuestCredentials, validGuestToken } from "./appointments.security.js";
+import { createGuestCredentials, validGuestAccess } from "./appointments.security.js";
 import type { BookingInput } from "./appointments.schema.js";
 
 export class RestartReservation extends Error {}
@@ -116,7 +116,7 @@ export function createAppointmentsService(prisma: PrismaClient, timeZone: string
       return prisma.$transaction(async tx => {
         const record = await tx.appointment.findUnique({ where: { bookingCode }, select: { ...guestSelect, guestAccessTokenHash: true } });
         // Use the same response for missing appointments and incorrect credentials.
-        const valid = validGuestToken(token, record?.guestAccessTokenHash ?? "0".repeat(64));
+        const valid = await validGuestAccess(tx, token, record);
         if (!record || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "The booking code or private access token is incorrect.");
         const { guestAccessTokenHash: _hash, ...row } = record;
         return { appointment: guestView(row, await freshTime(tx), timeZone) };

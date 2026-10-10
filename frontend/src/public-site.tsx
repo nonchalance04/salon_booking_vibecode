@@ -4,6 +4,10 @@ import { PublicBooking } from "./public-booking";
 import { GuestAppointment } from "./booking";
 import { Chatbot } from "./chatbot";
 import "./public-design.css";
+import "./booking-design.css";
+import "./reservation-design.css";
+import "./phone-input.css";
+import "./professional-picker.css";
 
 export type CatalogService = { id: string; name: string; description: string | null; price: string; durationMinutes: number };
 export type Salon = { profile: { name: string; address: string | null; email: string | null; phone: string | null } | null; timeZone: string };
@@ -47,7 +51,7 @@ export function PublicSite() {
   let content: ReactNode;
   const catalogStatus = <>{loading && <p role="status">Loading salon services…</p>}{error && <p className="error" role="alert">{error} <button onClick={() => void load()}>Retry</button></p>}{!loading && !error && !services.length && <p className="empty-state">No services are available for online booking yet.</p>}</>;
   if (["/booking", "/availability"].includes(path)) content = <PublicBooking salon={salon} />;
-  else if (["/appointment", "/manage", "/payment"].includes(path) || path.startsWith("/confirmation/")) content = <GuestAppointment embedded />;
+  else if (["/a", "/appointment", "/manage", "/payment"].includes(path) || path.startsWith("/confirmation/")) content = <GuestAppointment embedded />;
   else if (path === "/help") content = <Chatbot embedded />;
   else if (path === "/about") content = <><div className="container page-section"><p className="eyebrow">WELCOME TO CLIQUE</p><h1 className="section-title">A little about us.</h1></div><About salon={salon} />{error && <div className="container">{catalogStatus}</div>}</>;
   else if (path === "/services") content = <section className="container page-section"><p className="eyebrow">FIND YOUR NEXT FAVORITE</p><h1 className="section-title">Our Services</h1><p className="muted">A fresh look. A little care. A moment just for you.</p><label className="catalog-search">Search services<input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search services" /></label>{catalogStatus}<ServiceCards services={services.filter(s => s.name.toLowerCase().includes(query.toLowerCase()))} />{!loading && !error && services.length > 0 && !services.some(s => s.name.toLowerCase().includes(query.toLowerCase())) && <p className="empty-state">No matching services. Try another search.</p>}</section>;

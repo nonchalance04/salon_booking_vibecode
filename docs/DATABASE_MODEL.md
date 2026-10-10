@@ -253,6 +253,13 @@ Represents salon personnel who perform services.
   - String
   - Nullable
 
+- `publicProfile`
+  - Nullable JSONB; existing staff start without a published profile.
+  - Validated object containing `title`, `bio`, `photoUrl`, `languages`, `portfolio`, and `reviews`.
+  - Images use HTTPS URLs. Portfolio entries contain title, image URL, and caption; testimonials contain display name, rating, and text.
+  - Profile changes are admin-only and audited. Staff names, qualifications, and activity remain separately managed.
+  - Completed-appointment and unique-client counts are derived from completed appointments with active, performed services; they are not editable profile fields.
+
 - `isActive`
   - Boolean
   - Default true
@@ -2302,3 +2309,6 @@ Business decision
 → Database Model update  
 → Prisma schema/migration  
 → Tests
+## Appointment OTP access records
+
+`AppointmentOtpChallenge` stores a UUID, optional appointment relation (null for unmatched requests), hashed identity, keyed code digest, attempt count, creation/expiry times and consumption time. `AppointmentGuestSession` stores only the random session token's SHA-256 hash, appointment relation and expiry. `AppointmentOtpRate` stores keyed rate-limit identities, counts and window expiries. These temporary access records are separate from historical transactional data and are pruned by the hold worker.

@@ -94,10 +94,13 @@ export function calculateAvailability(input: AvailabilityInput, data: Availabili
   const day = localDay(input.date, data.timeZone);
   const { earliest, latest } = policyBounds(data);
   const result = [];
-  // Minute cadence is a presentation choice, not a reservation restriction.
-  // An exact offset timestamp can also be checked via startAt.
-  for (let ms = Math.ceil(Math.max(day.start.getTime(), earliest.getTime()) / 60_000) * 60_000;
-    ms < day.end.getTime() && ms <= latest.getTime(); ms += 60_000) {
+  // Offer quarter-hour starts anchored to the salon-local day. Round up so a
+  // lead-time boundary never offers a start earlier than the policy permits.
+  // Exact startAt checks remain available for existing appointment schedules.
+  const intervalMs = 15 * 60_000;
+  const firstStart = day.start.getTime() + Math.ceil(Math.max(0, earliest.getTime() - day.start.getTime()) / intervalMs) * intervalMs;
+  for (let ms = firstStart;
+    ms < day.end.getTime() && ms <= latest.getTime(); ms += intervalMs) {
     const plan = resolve(new Date(ms));
     if (plan) result.push(plan);
   }

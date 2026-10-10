@@ -11,11 +11,17 @@ export const envSchema = z.object({
   }, "A PostgreSQL URL with a database name is required."),
   JWT_SECRET: z.string().trim().min(32),
   NOTIFICATION_EMAIL_PROVIDER: z.enum(["disabled", "test", "resend"]).default("disabled"),
-  NOTIFICATION_SMS_PROVIDER: z.enum(["disabled", "test", "philsms"]).default("disabled"),
+  NOTIFICATION_SMS_PROVIDER: z.enum(["disabled", "test", "philsms", "textbee"]).default("disabled"),
+  APPOINTMENT_OTP_PROVIDER: z.enum(["disabled", "textbee"]).default("disabled"),
+  TEXTBEE_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).regex(/^\S+$/).optional()),
+  TEXTBEE_DEVICE_ID: z.preprocess(v => v === "" ? undefined : v, z.string().regex(/^[a-fA-F0-9]{24}$/).optional()),
+  APPOINTMENT_OTP_SECRET: z.preprocess(v => v === "" ? undefined : v, z.string().min(32).optional()),
   RESEND_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().min(10).optional()),
   NOTIFICATION_EMAIL_FROM: z.preprocess(v => v === "" ? undefined : v, z.email().optional()),
   PHILSMS_API_TOKEN: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).regex(/^\S+$/).optional()),
   PHILSMS_SENDER_ID: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).max(11).regex(/^[A-Za-z0-9 ]+$/).optional()),
+  NOTIFICATION_SMS_POLICY: z.enum(["minimal", "all"]).default("minimal"),
+  PUBLIC_SITE_URL: z.preprocess(v => v === "" ? undefined : v, z.url().optional()),
   NOTIFICATION_LEASE_MS: z.coerce.number().int().min(5000).max(600000).default(60000),
   NOTIFICATION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(20000).default(10000),
   NOTIFICATION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
@@ -40,13 +46,24 @@ export const envSchema = z.object({
     }), "Provide exact HTTP(S) origins, separated by commas."),
   COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
 }).superRefine((value, context) => {
+  if (value.PUBLIC_SITE_URL) {
+    const url = new URL(value.PUBLIC_SITE_URL);
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== "/" ||
+      !value.TRUSTED_ORIGINS.includes(url.origin) || (value.NODE_ENV === "production" && url.protocol !== "https:")) {
+      context.addIssue({ code: "custom", path: ["PUBLIC_SITE_URL"], message: "Use a trusted frontend origin without a path." });
+    }
+  }
   if (value.NOTIFICATION_LEASE_MS <= value.NOTIFICATION_TIMEOUT_MS + 1000) {
     context.addIssue({ code: "custom", path: ["NOTIFICATION_LEASE_MS"], message: "Lease must exceed provider timeout by more than one second." });
   }
   for (const field of ["NOTIFICATION_EMAIL_PROVIDER", "NOTIFICATION_SMS_PROVIDER"] as const) {
     if (value.NODE_ENV === "production" && value[field] === "test") context.addIssue({ code: "custom", path: [field], message: "Test notification providers are disabled in production." });
   }
+  if (value.APPOINTMENT_OTP_PROVIDER === "textbee" && !value.APPOINTMENT_OTP_SECRET) {
+    context.addIssue({ code: "custom", path: ["APPOINTMENT_OTP_SECRET"], message: "A separate OTP secret is required." });
+  }
   const notificationFields = [
+    ...(value.NOTIFICATION_SMS_PROVIDER === "textbee" || value.APPOINTMENT_OTP_PROVIDER === "textbee" ? ["TEXTBEE_API_KEY", "TEXTBEE_DEVICE_ID"] as const : []),
     ...(value.NOTIFICATION_EMAIL_PROVIDER === "resend" ? ["RESEND_API_KEY", "NOTIFICATION_EMAIL_FROM"] as const : []),
     ...(value.NOTIFICATION_SMS_PROVIDER === "philsms" ? ["PHILSMS_API_TOKEN", "PHILSMS_SENDER_ID"] as const : []),
   ];

@@ -1,3 +1,6 @@
+import { PhoneInput } from "./phone-input";
+import { philippinePhoneNumber } from "./phone-number";
+import { AppointmentOtp } from "./appointment-otp";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { AppointmentManagement } from "./appointment-management";
@@ -27,7 +30,7 @@ export function BookingForm({ plan, onBusy, onBooked }: { plan: BookingPlan; onB
     try {
       const email = String(data.get("email")).trim();
       const result = await api<BookingResult>("/appointments", { method: "POST", body: JSON.stringify({ ...plan,
-        customer: { firstName: String(data.get("firstName")).trim(), lastName: String(data.get("lastName")).trim(), phone: String(data.get("phone")).trim(), ...(email ? { email } : {}) },
+        customer: { firstName: String(data.get("firstName")).trim(), lastName: String(data.get("lastName")).trim(), phone: philippinePhoneNumber(String(data.get("phone"))), ...(email ? { email } : {}) },
       }) });
       onBooked(result);
     } catch (err) { setError(message(err)); }
@@ -37,7 +40,7 @@ export function BookingForm({ plan, onBusy, onBooked }: { plan: BookingPlan; onB
     <fieldset disabled={busy}><div className="form-grid">
       <label>First name<input name="firstName" required maxLength={100} autoComplete="given-name" /></label>
       <label>Last name<input name="lastName" required maxLength={100} autoComplete="family-name" /></label>
-      <label>Phone<input name="phone" type="tel" required minLength={5} maxLength={32} autoComplete="tel" /></label>
+      <label>Phone<PhoneInput name="phone" /></label>
       <label>Email (optional)<input name="email" type="email" maxLength={254} autoComplete="email" /></label>
     </div></fieldset>
     <p>Submitting reserves a temporary hold. Your booking is confirmed only after appointment-fee payment.</p>
@@ -76,28 +79,46 @@ export function AppointmentView({ initial, token: initialToken }: { initial: App
   }, [appointment.bookingCode, token]);
   const format = (value: string) => new Intl.DateTimeFormat(undefined, { timeZone: appointment.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
   const privateLink = `${window.location.origin}/appointment#${new URLSearchParams({ code: appointment.bookingCode, token })}`;
-  return <section className="visit-summary" aria-label="Your booking"><h2>Your booking</h2><p><strong>{appointment.bookingCode}</strong></p>
-    <p>{appointment.customer.firstName} {appointment.customer.lastName} · {format(appointment.startAt)}</p>
-    <p>Status: <strong>{appointment.status.replaceAll("_", " ")}</strong></p>
-    {appointment.status === "PENDING_PAYMENT" && <><p role="status">{remaining > 0 ? `Temporary hold: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")} remaining` : "The hold deadline has passed. Refresh to check the latest status."}</p>
-      <p>Appointment fee: <strong>PHP {appointment.appointmentFeeAmount}</strong>, separate from your service charges.</p>
-      <FeePaymentControls bookingCode={appointment.bookingCode} token={token} onChange={refresh} pending={appointment.payments?.find(p => p.status === "PENDING")} /></>}
-    {appointment.status === "CONFIRMED" && <p role="status" className="success">Your appointment is confirmed. We look forward to seeing you.</p>}
-    <FeePaymentHistory payments={appointment.payments ?? []} />
-    {appointment.status === "EXPIRED" && <p>This hold has expired and the time is released. <a href="/availability">Find another time</a>.</p>}
-    <ol>{appointment.appointmentServices.map(s => <li key={s.sequenceNo}><strong>{s.serviceNameSnapshot}</strong> · PHP {s.priceSnapshot}<br />{s.staff.firstName} {s.staff.lastName} · {format(s.scheduledStartAt)} – {format(s.scheduledEndAt)}</li>)}</ol>
-    <p>All times are in {appointment.timeZone}.</p>
-    <label>Private booking link<input readOnly value={privateLink} onFocus={e => e.currentTarget.select()} /></label>
-    <p className="muted">Save this link to return to your booking. Anyone with it can view and manage your appointment. Keep it private.</p>
-    <AppointmentManagement key={appointment.bookingCode} appointment={appointment} token={token} onChange={(updated, newToken) => {
-      clock.current = { received: performance.now(), server: Date.parse(updated.serverTime) };
-      setAppointment(updated); if (newToken) setToken(newToken);
-    }} />
-    <button type="button" onClick={() => void refresh()}>Refresh status</button>
+  const date = (value: string) => new Intl.DateTimeFormat("en-PH", { timeZone: appointment.timeZone, weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(value));
+  const time = (value: string) => new Intl.DateTimeFormat("en-PH", { timeZone: appointment.timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(value));
+  const money = (value: string | number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(value));
+  const serviceTotal = appointment.appointmentServices.reduce((sum, service) => sum + Math.round(Number(service.priceSnapshot) * 100), 0) / 100;
+  return <section className="visit-summary reservation" aria-label="Your booking">
+    <header className="reservation-header">
+      <div><p className="booking-kicker">BOOKING REFERENCE</p><h2>{appointment.bookingCode}</h2><p className="muted">Booked for {appointment.customer.firstName} {appointment.customer.lastName}</p></div>
+      <span className={`reservation-status reservation-status--${appointment.status.toLowerCase()}`}>{appointment.status.replaceAll("_", " ")}</span>
+    </header>
+    {appointment.status === "CONFIRMED" && <p role="status" className="reservation-notice reservation-notice--success">✓ Your appointment is confirmed. We look forward to seeing you.</p>}
+    {appointment.status === "EXPIRED" && <p className="reservation-notice">This hold has expired and the time is released. <a href="/availability">Find another time →</a></p>}
+    <div className="reservation-grid"><div className="reservation-main">
+      <section className="reservation-card" aria-label="Visit details"><p className="booking-kicker">YOUR VISIT</p><h3>{date(appointment.startAt)}</h3><p className="reservation-time">{time(appointment.startAt)} – {time(appointment.endAt)}</p><p className="muted reservation-timezone">All times are in {appointment.timeZone}.</p>
+        <ol className="reservation-services">{appointment.appointmentServices.map(service => <li key={service.sequenceNo}><div className="reservation-service-heading"><strong>{service.serviceNameSnapshot}</strong><strong>{money(service.priceSnapshot)}</strong></div><p className="muted">{service.staff.firstName} {service.staff.lastName}</p><p className="reservation-service-time">{format(service.scheduledStartAt)} – {time(service.scheduledEndAt)}</p></li>)}</ol>
+        <div className="reservation-total"><span>Service total</span><strong>{money(serviceTotal)}</strong></div><p className="muted reservation-footnote">Service charges are separate from the appointment fee.</p>
+      </section>
+      <div className="reservation-card reservation-management"><AppointmentManagement key={appointment.bookingCode} appointment={appointment} token={token} onChange={(updated, newToken) => {
+        clock.current = { received: performance.now(), server: Date.parse(updated.serverTime) };
+        setAppointment(updated); if (newToken) setToken(newToken);
+      }} /></div>
+    </div><aside className="reservation-sidebar" aria-label="Payment and booking access">
+      {appointment.status === "PENDING_PAYMENT" && <section className="reservation-card reservation-payment"><p className="booking-kicker">COMPLETE YOUR RESERVATION</p><h3>Confirm your visit</h3><p className="muted">Pay the appointment fee before your temporary hold expires.</p>
+        <div className="reservation-hold" role="status"><span>Temporary hold</span><strong>{remaining > 0 ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : "Time elapsed"}</strong><span>{remaining > 0 ? "remaining to complete payment" : "Refresh to check the latest status."}</span></div>
+        <div className="reservation-fee"><span>Appointment fee</span><strong>{money(appointment.appointmentFeeAmount)}</strong></div><p className="muted reservation-footnote">Separate from your service charges.</p>
+        <FeePaymentControls bookingCode={appointment.bookingCode} token={token} onChange={refresh} pending={appointment.payments?.find(p => p.status === "PENDING")} />
+      </section>}
+      {!!appointment.payments?.length && <div className="reservation-card reservation-history"><FeePaymentHistory payments={appointment.payments} /></div>}
+      {token && <section className="reservation-card reservation-access"><p className="booking-kicker">KEEP YOUR BOOKING CLOSE</p><h3>Save your private link</h3><p className="muted">Return to this link to view and manage your appointment.</p><label>Private booking link<input readOnly value={privateLink} onFocus={e => e.currentTarget.select()} /></label><p className="muted reservation-footnote">Anyone with this link can access your booking. Keep it private.</p></section>}
+    </aside></div>
+    <footer className="reservation-footer"><p className="muted">Check the latest booking and payment updates.</p><button type="button" onClick={() => void refresh()}>Refresh status ↻</button></footer>
     {error && <p role="alert" className="error">{error}</p>}
   </section>;
+
 }
 function readGuestCredentials() {
+    if (window.location.pathname === "/a" && /^[A-Za-z0-9_-]{43}$/.test(window.location.hash.slice(1))) {
+      const token = window.location.hash.slice(1);
+      window.history.replaceState(null, "", "/appointment");
+      return { bookingCode: "", token };
+    }
     const params = new URLSearchParams(window.location.hash.slice(1));
     // Fragments never go to the server. Remove it from the current history entry
     // after reading; keep the token in component memory, not browser storage.
@@ -111,10 +132,15 @@ export function GuestAppointment({ embedded = false }: { embedded?: boolean } = 
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const requestGeneration = useRef(0);
+  useEffect(() => {
+    const expired = () => { requestGeneration.current++; setResult(null); setToken(""); setCredentials({ bookingCode: "", token: "" }); setError("Your session expired. Verify your phone number again."); };
+    window.addEventListener("guest-session-expired", expired);
+    return () => window.removeEventListener("guest-session-expired", expired);
+  }, []);
   async function retrieve(bookingCode: string, accessToken: string) {
     const generation = ++requestGeneration.current;
     setBusy(true); setError(""); setResult(null);
-    try { const response = await api<{ appointment: Appointment }>("/appointments/access", { method: "POST", body: JSON.stringify({ bookingCode, token: accessToken }) });
+    try { const response = await api<{ appointment: Appointment }>(bookingCode ? "/appointments/access" : "/appointments/link", { method: "POST", body: JSON.stringify(bookingCode ? { bookingCode, token: accessToken } : { token: accessToken }) });
       if (generation === requestGeneration.current) { setToken(accessToken); setResult(response.appointment); }
     }
     catch (err) { if (generation === requestGeneration.current) setError(message(err)); }
@@ -131,15 +157,19 @@ export function GuestAppointment({ embedded = false }: { embedded?: boolean } = 
     window.addEventListener("hashchange", changed);
     return () => { window.removeEventListener("hashchange", changed); requestGeneration.current++; };
   }, []);
-  useEffect(() => { if (credentials.bookingCode && credentials.token) void retrieve(credentials.bookingCode, credentials.token); }, [credentials]);
+  useEffect(() => { if (credentials.token) void retrieve(credentials.bookingCode, credentials.token); }, [credentials]);
   return <div className={embedded ? "guest-appointment container page-section" : "workspace"}>{!embedded && <header><a className="wordmark" href="/availability">CLIQUE<span>SALON</span></a><a href="/availability">Find a salon time</a><a href="/help">Salon help</a></header>}
-    <section className={embedded ? "manage-panel" : "workspace-main availability-page"}><p className="eyebrow">YOUR VISIT</p><h1 className="section-title">Your appointment</h1>
-      {result ? <AppointmentView key={result.bookingCode} initial={result} token={token} /> : <form key={credentials.bookingCode} className="account-form" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void retrieve(String(data.get("code")).trim(), String(data.get("token")).trim()); }}>
+    <section className={embedded ? `manage-panel${result ? " reservation-page" : ""}` : "workspace-main availability-page"}><p className="eyebrow">YOUR VISIT</p><h1 className="section-title">Your appointment</h1>
+      {result ? <><AppointmentView key={result.bookingCode} initial={result} token={token} />
+        {!token && <button type="button" onClick={() => { void api("/appointments/otp/logout", { method: "POST" }).then(() => { setResult(null); setCredentials({ bookingCode: "", token: "" }); }).catch(err => setError(message(err))); }}>Close appointment</button>}
+      </> : <>
+        {(!credentials.token || Boolean(error)) && <AppointmentOtp onVerified={appointment => { requestGeneration.current++; setToken(""); setResult(appointment); setError(""); }} />}
+        <details open={Boolean(credentials.token)}><summary>Use a private booking link or access token</summary><form key={credentials.bookingCode} className="account-form" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void retrieve(String(data.get("code")).trim(), String(data.get("token")).trim()); }}>
         <p>Open your saved private booking link, or enter your booking code and private access token below.</p>
-        <p className="muted">If you just returned from PayMongo, check payment status in your original booking tab or reopen that private link.</p>
+        <p className="muted">If you just returned from PayMongo, return to your original booking tab or reopen your private link. Your payment will be verified automatically.</p>
         <label>Booking code<input name="code" required defaultValue={credentials.bookingCode} /></label>
         <label>Private access token<input name="token" type="password" required autoComplete="off" defaultValue={credentials.token} /></label>
         <button disabled={busy}>{busy ? "Loading…" : "View appointment"}</button>
-      </form>}{error && <p role="alert" className="error">{error}</p>}
+      </form></details></>}{error && <p role="alert" className="error">{error}</p>}
     </section></div>;
 }

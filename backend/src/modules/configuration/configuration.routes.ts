@@ -5,7 +5,7 @@ import { validateRequest } from "../../shared/http.js";
 import { createAuthMiddleware } from "../auth/auth.middleware.js";
 import { browserSecurity, type AuthConfig } from "../auth/auth.security.js";
 import { createConfigurationService } from "./configuration.service.js";
-import { profileSchema, serviceSchema, staffSchema, qualificationSchema, hoursSchema, scheduleSchema, closureSchema, unavailabilitySchema, policySchema, recordId } from "./configuration.schema.js";
+import { staffPublicProfileSchema, profileSchema, serviceSchema, staffSchema, qualificationSchema, hoursSchema, scheduleSchema, closureSchema, unavailabilitySchema, policySchema, recordId } from "./configuration.schema.js";
 
 export function createConfigurationRouter(prisma: PrismaClient, config: AuthConfig) {
   const router = Router();
@@ -30,6 +30,9 @@ export function createConfigurationRouter(prisma: PrismaClient, config: AuthConf
   }
   register("services", serviceSchema, service.saveService);
   register("staff", staffSchema, service.saveStaff);
+  router.put("/configuration/staff/:id/profile", validateRequest(z.object({ params: recordId, body: staffPublicProfileSchema })), async (_req, res) => {
+    res.json({ record: await service.saveStaffPublicProfile(res.locals.user.id, res.locals.validated.params.id, res.locals.validated.body) });
+  });
   register("qualifications", qualificationSchema, service.saveQualification);
   register("hours", hoursSchema, service.saveHours);
   register("schedules", scheduleSchema, service.saveSchedule);

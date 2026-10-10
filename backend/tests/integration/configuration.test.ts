@@ -244,6 +244,14 @@ test("public APIs expose only public configuration; Admin API enforces roles, CS
     const policy = await prisma.bookingPolicyVersion.findFirstOrThrow();
     assert.equal((await request(`/configuration/policies/${policy.id}`, "PUT", adminCookie, {})).status, 404);
     const f = await fixture();
+    const publicProfile = { title: "Stylist", bio: "Public bio", photoUrl: null, languages: [], portfolio: [], reviews: [] };
+    const profilePath = `/configuration/staff/${f.staff.id}/profile`;
+    assert.equal((await request(profilePath, "PUT", "", publicProfile)).status, 401);
+    assert.equal((await request(profilePath, "PUT", cashierCookie, publicProfile)).status, 403);
+    assert.equal((await request(profilePath, "PUT", adminCookie, publicProfile, "https://evil.example")).status, 403);
+    assert.equal((await request(profilePath, "PUT", adminCookie, { ...publicProfile, photoUrl: "javascript:alert(1)" })).status, 400);
+    assert.equal((await request(profilePath, "PUT", adminCookie, publicProfile)).status, 200);
+    assert.deepEqual((await (await request("/availability/staff")).json()).staff.find((row: { id: string }) => row.id === f.staff.id).publicProfile, publicProfile);
     const conflict = await request("/configuration/closures", "POST", adminCookie, { startsAt: f.startAt.toISOString(), endsAt: f.reservedUntilAt.toISOString(), reason: null });
     assert.equal(conflict.status, 409); assert.ok((await conflict.json()).error.details.appointments.some((a: { appointmentId: string }) => a.appointmentId === f.booking.id));
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
@@ -329,4 +337,29 @@ test("public availability HTTP validates plans, returns no-store results, and ha
     const body = await response.json(); assert.ok(body.slots.length > 0); assert.equal(body.timeZone, "Asia/Manila");
     assert.ok(body.slots.some((s: { startAt: string }) => s.startAt === f.startAt.toISOString()));
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+});
+
+test("staff profiles persist, are audited, and expose only public details with performed-visit counts", async () => {
+  const f = await fixture();
+  const profile = { title: "Senior stylist", bio: "Precision cuts", photoUrl: "https://example.com/stylist.jpg", languages: ["English", "Tagalog"], portfolio: [{ title: "Bob", imageUrl: "https://example.com/bob.jpg", caption: "Soft finish" }], reviews: [{ author: "Client A", rating: 5, text: "Lovely service" }] };
+  await assert.rejects(service.saveStaffPublicProfile(cashierId, f.staff.id, profile), (error: unknown) => error instanceof ApiError && error.status === 403);
+  await service.saveStaffPublicProfile(adminId, f.staff.id, profile);
+  assert.deepEqual((await prisma.staff.findUniqueOrThrow({ where: { id: f.staff.id } })).publicProfile, profile);
+  assert.equal(await prisma.auditLog.count({ where: { entityType: "StaffPublicProfile", entityId: f.staff.id } }), 1);
+  const catalog = createAvailabilityService(prisma, "Asia/Manila");
+  const publicStaff = () => catalog.catalog().then(result => result.staff.find(row => row.id === f.staff.id)!);
+  assert.deepEqual((await publicStaff()).statistics, { appointmentsCompleted: 0, clientsServed: 0 });
+  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "COMPLETED" } });
+  assert.deepEqual((await publicStaff()).statistics, { appointmentsCompleted: 0, clientsServed: 0 });
+  await prisma.appointmentService.update({ where: { id: f.booking.appointmentServices[0]!.id }, data: { outcome: "PERFORMED", actualChargedAmount: "120.00", outcomeFinalizedAt: new Date(), outcomeFinalizedByUserId: adminId } });
+  const person = await publicStaff();
+  assert.deepEqual(person.publicProfile, profile);
+  assert.deepEqual(person.statistics, { appointmentsCompleted: 1, clientsServed: 1 });
+  assert.equal("phone" in person, false); assert.equal("commissionRate" in person, false);
+  await service.saveStaff(adminId, { firstName: "Updated", lastName: f.staff.lastName, phone: null, isActive: true }, f.staff.id);
+  assert.deepEqual((await publicStaff()).publicProfile, profile);
+  await service.saveStaffPublicProfile(adminId, f.staff.id, { ...profile, photoUrl: null, portfolio: [], reviews: [] });
+  assert.deepEqual((await publicStaff()).publicProfile, { ...profile, photoUrl: null, portfolio: [], reviews: [] });
+  await prisma.staff.update({ where: { id: f.staff.id }, data: { isActive: false } });
+  assert.equal(await publicStaff(), undefined);
 });

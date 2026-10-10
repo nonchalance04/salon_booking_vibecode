@@ -1,3 +1,4 @@
+import { guestSessionCredentials } from "../appointments/appointment-otp.routes.js";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import type { PrismaClient } from "../../../generated/prisma/client.js";
@@ -22,18 +23,18 @@ export function createPaymentsRouter(prisma: PrismaClient, config: AuthConfig, p
   });
   router.use("/payments", browserSecurity(config.TRUSTED_ORIGINS));
   router.get("/payments/options", (_req, res) => res.json({ onlineAvailable: Boolean(provider), testMode: provider?.name === "test", provider: provider?.name ?? null, sandbox: provider?.name === "paymongo" && config.NODE_ENV !== "production" }));
-  router.post("/payments/status", validateRequest(z.object({ body: guestAccessSchema.extend({ paymentId: z.uuid() }).strict() })), async (_req, res) => {
+  router.post("/payments/status", guestSessionCredentials(prisma), validateRequest(z.object({ body: guestAccessSchema.extend({ paymentId: z.uuid() }).strict() })), async (_req, res) => {
     const { bookingCode, token, paymentId } = res.locals.validated.body;
     res.json({ payment: await service.refresh(bookingCode, token, paymentId) });
   });
   router.post("/payments/recover-checkout", auth.authenticate, auth.adminOnly, validateRequest(z.object({ body: z.object({ paymentId: z.uuid(), checkoutReference: z.string().regex(/^cs_[A-Za-z0-9]+$/) }).strict() })), async (_req, res) => {
     res.json({ payment: await service.recoverCheckout(res.locals.user.id, res.locals.validated.body.paymentId, res.locals.validated.body.checkoutReference) });
   });
-  router.post("/payments/checkout", validateRequest(z.object({ body: checkoutSchema })), async (_req, res) => {
+  router.post("/payments/checkout", guestSessionCredentials(prisma), validateRequest(z.object({ body: checkoutSchema })), async (_req, res) => {
     const { bookingCode, token, idempotencyKey } = res.locals.validated.body;
     res.json(await service.checkout(bookingCode, token, idempotencyKey));
   });
-  router.post("/payments/test-capture", validateRequest(z.object({ body: testCaptureSchema })), async (_req, res) => {
+  router.post("/payments/test-capture", guestSessionCredentials(prisma), validateRequest(z.object({ body: testCaptureSchema })), async (_req, res) => {
     const { bookingCode, token, paymentId, outcome } = res.locals.validated.body;
     res.json({ payment: await service.simulate(bookingCode, token, paymentId, outcome) });
   });

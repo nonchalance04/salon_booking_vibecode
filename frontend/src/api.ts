@@ -11,8 +11,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
   if (!response.ok) {
-    if (response.status === 401 && !["/auth/login", "/auth/me"].includes(path)) window.dispatchEvent(new Event("session-expired"));
     const result = await response.json().catch(() => null);
+    if (result?.error?.code === "GUEST_SESSION_EXPIRED") {
+      if (path !== "/appointments/otp/session") window.dispatchEvent(new Event("guest-session-expired"));
+    } else if (response.status === 401 && !["/auth/login", "/auth/me", "/appointments/otp/session"].includes(path)) window.dispatchEvent(new Event("session-expired"));
     throw new ApiError(response.status, result?.error?.message ?? "The request could not be completed.", result?.error?.details);
   }
   return response.status === 204 ? undefined as T : response.json();

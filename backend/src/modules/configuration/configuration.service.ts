@@ -2,7 +2,7 @@ import { Prisma, type PrismaClient } from "../../../generated/prisma/client.js";
 import { ApiError } from "../../shared/http.js";
 import { lockSalon, lockStaff, freshTime } from "../scheduling/coordination.js";
 import { coversReservation, overlaps } from "../scheduling/coverage.js";
-import type { ProfileInput, ServiceInput, StaffInput, QualificationInput, HoursInput, ScheduleInput, ClosureInput, UnavailabilityInput, PolicyInput } from "./configuration.schema.js";
+import type { StaffPublicProfileInput, ProfileInput, ServiceInput, StaffInput, QualificationInput, HoursInput, ScheduleInput, ClosureInput, UnavailabilityInput, PolicyInput } from "./configuration.schema.js";
 
 type Tx = Prisma.TransactionClient;
 const time = (value: string) => new Date(`1970-01-01T${value.length === 5 ? `${value}:00` : value}Z`);
@@ -123,6 +123,14 @@ export function createConfigurationService(prisma: PrismaClient, timeZone: strin
         const row = id ? await tx.staff.update({ where: { id }, data: input }) : await tx.staff.create({ data: input });
         if (before?.isActive && !row.isActive) await protect(tx, { staffId: row.id }, () => true);
         await audit(tx, actorId, "Staff", row.id, before, row);
+        return row;
+      });
+    },
+    saveStaffPublicProfile(actorId: string, id: string, input: StaffPublicProfileInput) {
+      return write(actorId, "shared", [id], async tx => {
+        const before = required(await tx.staff.findUnique({ where: { id } }));
+        const row = await tx.staff.update({ where: { id }, data: { publicProfile: json(input) } });
+        await audit(tx, actorId, "StaffPublicProfile", id, before.publicProfile, row.publicProfile);
         return row;
       });
     },

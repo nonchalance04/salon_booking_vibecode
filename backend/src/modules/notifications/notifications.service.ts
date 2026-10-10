@@ -1,3 +1,5 @@
+import { bookingLinkToken, confirmationSms, suppressRoutineSms } from "./minimal-sms.js";
+import { tokenHash } from "../appointments/appointments.security.js";
 import { Prisma, type PrismaClient, type NotificationQueue } from "../../../generated/prisma/client.js";
 import { NotificationFailure, type NotificationProvider } from "./notification-provider.js";
 import { notificationPayload, renderNotification } from "./templates.js";
@@ -10,12 +12,19 @@ export type NotificationOptions = {
   maxAttempts: number;
   retryBaseMs: number;
   reminderHours: number;
+  smsPolicy?: "minimal" | "all";
+  publicSiteUrl?: string;
+  bookingLinkSecret?: string;
 };
 
 export function createNotificationsService(db: PrismaClient, options: NotificationOptions) {
   if (!Number.isInteger(options.maxAttempts) || options.maxAttempts < 1 || options.maxAttempts > 20 ||
       !Number.isFinite(options.timeoutMs) || options.timeoutMs < 1 || !Number.isFinite(options.leaseMs) || options.leaseMs <= options.timeoutMs ||
       !Number.isFinite(options.retryBaseMs) || options.retryBaseMs < 1 || !Number.isFinite(options.reminderHours) || options.reminderHours < 0) throw new Error("Invalid notification worker options.");
+  const minimalSms = options.smsPolicy !== "all";
+  if (minimalSms && options.providers.SMS && (!options.publicSiteUrl || !options.bookingLinkSecret)) {
+    throw new Error("Minimal SMS requires PUBLIC_SITE_URL and a booking-link secret before starting the worker.");
+  }
   const channels = Object.keys(options.providers).filter(channel => options.providers[channel as "EMAIL" | "SMS"]);
 
   async function claim() {
@@ -41,7 +50,7 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
 
   async function fail(row: NotificationQueue, error: unknown) {
     const known = error instanceof NotificationFailure;
-    const retry = (!known || error.retryable) && row.attemptCount < options.maxAttempts;
+    const retry = !(minimalSms && row.channel === "SMS") && (!known || error.retryable) && row.attemptCount < options.maxAttempts;
     const code = known ? error.code : "PROVIDER_UNAVAILABLE";
     const delay = Math.min(options.retryBaseMs * 2 ** (row.attemptCount - 1), 3_600_000);
     return db.$executeRaw`
@@ -50,6 +59,10 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
         "scheduledAt" = CASE WHEN ${retry} THEN clock_timestamp() + ${delay} * interval '1 millisecond' ELSE "scheduledAt" END
       WHERE "id" = ${row.id}::uuid AND "status" = 'PROCESSING' AND "attemptCount" = ${row.attemptCount}
     `;
+  }
+
+  async function skip(row: NotificationQueue, reason: string) {
+    await db.notificationQueue.updateMany({ where: { id: row.id, status: "PROCESSING", attemptCount: row.attemptCount }, data: { status: "SKIPPED", lastError: reason } });
   }
 
   async function deliver(row: NotificationQueue) {
@@ -61,7 +74,24 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
     let timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
     try {
-      const message = renderNotification(row, options.timeZone);
+      if (minimalSms && row.channel === "SMS") {
+        if (suppressRoutineSms(row)) { await skip(row, "SMS_MINIMAL_POLICY"); return; }
+        if (row.attemptCount > 1) { await skip(row, "SMS_DELIVERY_UNCERTAIN"); return; }
+      }
+      let message = renderNotification(row, options.timeZone);
+      if (minimalSms && row.channel === "SMS" && row.eventType === "BOOKING_CONFIRMED") {
+        const appointment = row.appointmentId ? await db.appointment.findUnique({ where: { id: row.appointmentId } }) : null;
+        if (!appointment || appointment.status !== "CONFIRMED" || appointment.startAt <= new Date()) { await skip(row, "CONFIRMATION_OBSOLETE"); return; }
+        const payment = await db.payment.findFirst({ where: { appointmentId: appointment.id, type: "APPOINTMENT_FEE", status: "SUCCEEDED", satisfiesObligation: true } });
+        if (!payment) { await skip(row, "CONFIRMATION_PAYMENT_UNVERIFIED"); return; }
+        if (!options.publicSiteUrl || !options.bookingLinkSecret) throw new NotificationFailure("BOOKING_LINK_NOT_CONFIGURED", false);
+        const token = bookingLinkToken(options.bookingLinkSecret, row.id);
+        message = confirmationSms(row, appointment.startAt, options.timeZone, options.publicSiteUrl, token);
+        // Durable hash only; retries derive the same token without storing it in the outbox.
+        await db.appointmentGuestSession.upsert({ where: { tokenHash: tokenHash(token) }, update: {}, create: {
+          tokenHash: tokenHash(token), appointmentId: appointment.id, expiresAt: new Date(+appointment.endAt + 30 * 86400_000),
+        } });
+      }
       if (row.eventType === "APPOINTMENT_REMINDER") {
         const p = notificationPayload.parse(row.payload);
         const current = row.appointmentId && await db.$queryRaw<{ id: string }[]>`
@@ -94,6 +124,7 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
       // schedule revision. No new queue model or unique constraint is needed.
       const candidates = await tx.$queryRaw<{ id: string }[]>`
         SELECT a."id" FROM "Appointment" a WHERE a."status" = 'CONFIRMED'
+          AND (${!minimalSms} OR EXISTS (SELECT 1 FROM "Customer" c WHERE c.id = a."customerId" AND c.email IS NOT NULL))
           AND a."startAt" > clock_timestamp()
           AND a."startAt" <= clock_timestamp() + ${options.reminderHours} * interval '1 hour'
           AND NOT EXISTS (SELECT 1 FROM "NotificationQueue" q WHERE q."appointmentId" = a."id"
@@ -104,6 +135,7 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
       let count = 0;
       for (const { id } of candidates) {
         const row = await tx.appointment.findUniqueOrThrow({ where: { id }, include: { customer: true } });
+        if (minimalSms && !row.customer.email) continue;
         const now = (await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`)[0]!.now;
         if (row.status !== "CONFIRMED" || row.startAt <= now) continue;
         // Recheck after locking: a concurrent scanner may have committed between

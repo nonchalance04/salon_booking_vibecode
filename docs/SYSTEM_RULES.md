@@ -218,6 +218,13 @@ A failure of any required condition makes the staff member unavailable for that 
 
 Availability shown to a customer is advisory until the reservation is successfully created transactionally.
 
+Available appointment starts are offered at 15-minute intervals in the salon's
+local time (for example, 9:00 AM, 9:15 AM, 9:30 AM, and 9:45 AM). Round up to the
+next interval when opening hours or booking lead time fall between these starts.
+Each offered start must still satisfy the full service duration and preparation
+buffer rules. Exact-time validation remains supported for existing schedules;
+the displayed interval does not replace staff reservation conflict checks.
+
 ---
 
 # 9. Full-Duration Scheduling Rule
@@ -1367,3 +1374,11 @@ Major behavioral changes may produce a major version such as:
 v1.x → v2.0
 
 Historical transactions must continue to preserve the policy, pricing, commission, payment-credit, and scheduling information applicable when they occurred.
+
+## Appointment access by SMS OTP
+
+A customer may regain access using the booking code and phone number already recorded on that appointment. A valid single-use OTP grants a two-hour session restricted to that appointment, including its existing customer management actions. OTP verification does not confirm payment or change appointment status. Existing private links remain usable. Codes expire in five minutes and allow five guesses; sending and verification are rate-limited. Changing the phone number through OTP recovery is not supported.
+
+## Minimal appointment SMS (2026-10-10)
+
+One normal paid booking sends one combined fee-payment/confirmation SMS with the appointment time and private access link. Routine standalone payment, completion and SMS reminder notices are suppressed at delivery with a retained SKIPPED record. OTP remains on-demand recovery. Schedule changes, cancellations and payments requiring reconciliation can generate separate exceptional notices. Email channel selection and delivery remain unchanged.

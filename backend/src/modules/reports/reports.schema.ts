@@ -11,6 +11,12 @@ export const reportQuery = z.object({
 },
   "Choose an ordered date range of at most 366 days.");
 export type ReportQuery = z.infer<typeof reportQuery>;
+export const confirmedServicesQuery = z.object({
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  search: z.string().trim().max(100).default(""),
+}).strict();
+export type ConfirmedServicesQuery = z.infer<typeof confirmedServicesQuery>;
 export function reportPeriod(q: ReportQuery, timeZone: string) {
   const start = Temporal.PlainDate.from(q.from).toZonedDateTime(timeZone);
   const end = Temporal.PlainDate.from(q.to).add({ days: 1 }).toZonedDateTime(timeZone);

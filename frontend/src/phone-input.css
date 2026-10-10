@@ -1,0 +1,6 @@
+.customer-site .phone-field{display:block}
+.customer-site .phone-input-group{display:flex;align-items:stretch;margin-top:8px;border:1px solid #d5d8cf;border-radius:10px;background:white;overflow:hidden}
+.customer-site .phone-input-group:focus-within{outline:3px solid #987b16;outline-offset:3px}
+.customer-site .phone-country{display:flex;align-items:center;padding:0 14px;background:#f6f5ef;border-right:1px solid #e0e0d7;font-size:14px;font-weight:600;color:#796020;flex-shrink:0}
+.customer-site .phone-field .phone-input-group input{margin:0;border:0;border-radius:0;box-shadow:none;outline:none;min-width:0;flex:1;width:100%;padding:12px;font-weight:400}
+.customer-site .phone-help{display:block;font-size:11px;font-weight:400;color:#73756f;margin-top:7px;line-height:1.6}

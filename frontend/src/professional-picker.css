@@ -1,0 +1,55 @@
+.customer-site .professional-guidance{font-size:13px;color:#73756f;line-height:1.7;margin-bottom:24px}
+.customer-site .professional-service-group+.professional-service-group{margin-top:30px}
+.customer-site .professional-service-title{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}
+.customer-site .professional-service-title h2{font-size:16px;margin:0}
+.customer-site .professional-service-title>span{font-size:11px;color:#73756f;white-space:nowrap}
+.customer-site .professional-card{display:flex;align-items:center;gap:18px;padding:22px;background:white;border:1px solid #d9d9d2;border-radius:14px;margin-bottom:12px;transition:border-color .15s,box-shadow .15s}
+.customer-site .professional-card:hover{border-color:#b6a059;box-shadow:0 4px 14px #292a2806}
+.customer-site .professional-card.is-selected{border-color:#d3ae30;background:#fffef9}
+.customer-site .professional-card-copy{flex:1;min-width:0}
+.customer-site .professional-card-copy h3{font-size:15px;margin:0 0 4px;letter-spacing:-.02em;overflow-wrap:anywhere}
+.customer-site .professional-card-copy p{font-size:12px;color:#73756f;margin:0;font-weight:400}
+.customer-site .professional-select{border:0;border-radius:99px;padding:9px 20px;font-size:11px;min-width:88px;background:white;box-shadow:0 2px 12px #292a2826;flex-shrink:0}
+.customer-site .is-selected .professional-select{background:#d3ae30;color:#292a28;box-shadow:0 3px 12px #b3943040}
+.customer-site .professional-view-profile{border:0;background:transparent;padding:0;margin-top:12px;font-size:11px;font-weight:400;color:#292a28;text-decoration:underline;text-underline-offset:3px}
+.customer-site .professional-any-icon{width:58px;height:58px;flex-shrink:0;border-radius:50%;background:#f1e3af;color:#b48c16;display:grid;place-items:center;font-size:32px}
+.customer-site .professional-portrait{position:relative;display:block;width:58px;height:58px;flex-shrink:0;border-radius:50%;background:#e9e8df;color:#484b47;overflow:hidden}
+.customer-site .professional-portrait svg{display:block;width:100%;height:100%}
+.customer-site .professional-portrait>span{position:absolute;bottom:3px;left:0;width:100%;text-align:center;font-size:9px;letter-spacing:.1em;color:white;font-weight:600}
+.customer-site .portrait-tone-1{background:#e6ddd1;color:#655b52}.customer-site .portrait-tone-2{background:#e1e7e1;color:#46594d}.customer-site .portrait-tone-3{background:#eee2d9;color:#74594d}
+.customer-site .professional-dialog{position:fixed;inset:0;width:min(500px,calc(100% - 32px));max-height:calc(100dvh - 48px);padding:0;border:1px solid #e0e0d7;border-radius:20px;box-shadow:0 24px 90px #0003;color:#292a28;background:#fff;overflow:auto}
+.customer-site .professional-dialog::backdrop{background:#292a2866;backdrop-filter:blur(3px)}
+.customer-site .professional-modal-content{position:relative;padding:36px}
+.customer-site .profile-close{position:absolute;top:16px;right:16px;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:#f0f0eb;display:grid;place-items:center;font-size:25px;font-weight:400}
+.customer-site .professional-profile-header{text-align:center;padding-top:10px}
+.customer-site .portrait-large{width:116px;height:116px;margin:0 auto 18px}
+.customer-site .portrait-large>span{font-size:14px;bottom:9px}
+.customer-site .professional-profile-header h2{font-size:24px;margin:0 0 6px}
+.customer-site .professional-profile-header p{font-size:14px;color:#73756f;margin:0 0 12px}
+.customer-site .sample-profile-label{display:inline-block;background:#f5f0df;color:#85702f;font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px}
+.customer-site .profile-tabs{display:flex;justify-content:space-between;gap:10px;margin:28px 0 24px}
+.customer-site .profile-tabs button{flex:1;border:1px solid #d5d5cd;border-radius:99px;background:white;padding:8px 12px;font-size:12px;font-weight:400}
+.customer-site .profile-tabs [aria-selected=true]{background:#292a28;border-color:#292a28;color:white;font-weight:600}
+.customer-site .professional-tab-panel{min-height:220px;font-size:13px;line-height:1.7}
+.customer-site .profile-bio{color:#73756f;font-size:13px;margin-bottom:22px}
+.customer-site .professional-facts{margin:0 0 24px}
+.customer-site .professional-facts>div{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid #eeeeea}
+.customer-site .professional-facts dd{margin:0;text-align:right}.customer-site .professional-facts small{font-size:9px;color:#8b7950;margin-left:4px}
+.customer-site .professional-dialog h3{font-size:15px;margin:0 0 12px}
+.customer-site .professional-specialties{display:flex;flex-wrap:wrap;gap:7px}
+.customer-site .professional-specialties>span{border:1px solid #e4dfcf;background:#fbf9f2;border-radius:20px;padding:5px 10px;font-size:11px}
+.customer-site .professional-portfolio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:20px}
+.customer-site .portfolio-art{display:grid;place-items:center;aspect-ratio:1;border-radius:50% 50% 10px 10px;background:#e9dfcb;color:#8b7241;font-size:36px}.customer-site .portfolio-art-1{background:#e0e6dd;color:#6b7c62}.customer-site .portfolio-art-2{background:#eddfd6;color:#9b7562}
+.customer-site .professional-portfolio h4{font-size:11px;margin:10px 0 4px}.customer-site .professional-portfolio p{font-size:10px;color:#73756f;margin:0}
+.customer-site .professional-review{border:1px solid #e8e4d8;border-radius:12px;padding:16px;margin-top:12px;background:#fcfbf7}.customer-site .professional-review>span{color:#b28b16;letter-spacing:3px}
+.customer-site .professional-review blockquote{font-size:13px;margin:10px 0;line-height:1.7}.customer-site .professional-review p{font-size:10px;color:#73756f;margin:0}
+.customer-site .profile-sample-note{font-size:10px;line-height:1.7;color:#73756f;border-top:1px solid #e9e9e2;margin:24px 0 18px;padding-top:16px}
+.customer-site .profile-select{display:flex;justify-content:space-between;align-items:center;width:100%;padding:13px 18px;background:#292a28;color:white;border:0;border-radius:99px;font-size:13px}
+.customer-site .professional-empty{font-size:12px;color:#73756f;line-height:1.7;padding:12px}
+@media(max-width:480px){.customer-site .professional-card{gap:12px;padding:17px 14px}.customer-site .professional-portrait,.customer-site .professional-any-icon{width:46px;height:46px}.customer-site .professional-card-copy h3{font-size:13px}.customer-site .professional-card-copy p{font-size:10px}.customer-site .professional-select{padding:9px 12px;min-width:72px;font-size:10px}.customer-site .professional-service-title{align-items:start}.customer-site .professional-service-title h2{font-size:14px}.customer-site .professional-service-title>span{font-size:10px}.customer-site .professional-modal-content{padding:30px 22px 24px}.customer-site .portrait-large{width:104px;height:104px}.customer-site .professional-profile-header h2{font-size:22px}.customer-site .professional-dialog{max-height:calc(100dvh - 32px)}.customer-site .professional-facts>div{gap:12px}}
+@media(prefers-reduced-motion:reduce){.customer-site .professional-card{transition:none}}
+.customer-site img.professional-portrait{object-fit:cover}
+.customer-site .portfolio-photo{width:100%;aspect-ratio:1;object-fit:cover;display:block;border-radius:12px}
+.customer-site .portfolio-unavailable{font-size:11px;text-align:center;padding:12px;border-radius:12px}
+.customer-site .professional-dialog .profile-select{margin-top:24px}
+.customer-site .profile-bio,.customer-site .professional-review blockquote{white-space:pre-wrap;overflow-wrap:anywhere}

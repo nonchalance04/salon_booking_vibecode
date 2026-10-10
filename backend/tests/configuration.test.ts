@@ -32,3 +32,15 @@ test("configuration schemas preserve null/zero buffers and reject invalid money,
   assert.equal(closureSchema.safeParse({ startsAt: "2030-01-01T09:00", endsAt: "2030-01-01T10:00", reason: null }).success, false);
   assert.equal(policySchema.safeParse({ appointmentFeeType: "PERCENTAGE" }).success, false);
 });
+
+test("public staff profiles validate images, ratings, limits, and fields", async () => {
+  const { staffPublicProfileSchema } = await import("../src/modules/configuration/configuration.schema.js");
+  const profile = { title: "Senior stylist", bio: "Cuts and color", photoUrl: null, languages: ["English"], portfolio: [], reviews: [] };
+  assert.equal(staffPublicProfileSchema.parse(profile).title, "Senior stylist");
+  for (const photoUrl of ["javascript:alert(1)", "data:image/png;base64,abc", "http://example.com/photo.jpg", "https://user:pass@example.com/photo.jpg"]) {
+    assert.equal(staffPublicProfileSchema.safeParse({ ...profile, photoUrl }).success, false);
+  }
+  assert.equal(staffPublicProfileSchema.safeParse({ ...profile, reviews: [{ author: "Client", rating: 6, text: "Great" }] }).success, false);
+  assert.equal(staffPublicProfileSchema.safeParse({ ...profile, languages: Array(11).fill("English") }).success, false);
+  assert.equal(staffPublicProfileSchema.safeParse({ ...profile, appointmentsCompleted: 99 }).success, false);
+});

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { startPaymentSync } from "./payment-sync";
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
 export type FeePayment = { id: string; amount: string; status: string; reconciliationStatus: string; receipt: { receiptNumber: string; receiptSnapshot?: Record<string, unknown> } | null };
 export function FeePaymentControls({ bookingCode, token, onChange, pending }: { bookingCode: string; token: string; onChange: () => Promise<void>; pending?: FeePayment }) {
@@ -10,7 +11,13 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
   const sending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const changed = useRef(onChange); changed.current = onChange;
+  useEffect(() => { if (pending) setPayment(pending); }, [pending?.id, pending?.status]);
   useEffect(() => { api<{ onlineAvailable: boolean; testMode: boolean; sandbox: boolean }>("/payments/options").then(setOptions).catch(err => setError(message(err))); }, []);
+  useEffect(() => {
+    if (!options?.onlineAvailable || options.testMode || payment?.status !== "PENDING") return;
+    return startPaymentSync(checkPayment);
+  }, [bookingCode, token, options?.onlineAvailable, options?.testMode, payment?.id, payment?.status]);
   async function checkout() {
     if (sending.current) return;
     sending.current = true; setBusy(true); setError("");
@@ -33,12 +40,14 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
     finally { sending.current = false; setBusy(false); }
   }
   async function checkPayment() {
-    if (!payment || sending.current) return;
+    if (!payment || sending.current) return true;
     sending.current = true; setBusy(true); setError("");
     try {
-      await api("/payments/status", { method: "POST", body: JSON.stringify({ bookingCode, token, paymentId: payment.id }) });
-      await onChange();
-    } catch (err) { setError(message(err)); }
+      const result = await api<{ payment: FeePayment }>("/payments/status", { method: "POST", body: JSON.stringify({ bookingCode, token, paymentId: payment.id }) });
+      await changed.current();
+      setPayment(result.payment);
+      return result.payment.status === "PENDING";
+    } catch (err) { setError(message(err)); return true; }
     finally { sending.current = false; setBusy(false); }
   }
   return <div className="fee-payment">
@@ -47,7 +56,8 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
       {(!payment || !options.testMode) && !checkoutUrl ? <button type="button" className="primary" disabled={busy} onClick={() => void checkout()}>{busy ? "Opening payment…" : options.testMode ? "Open test payment" : "Pay with GCash"}</button> : options.testMode && <div className="actions"><button type="button" disabled={busy} onClick={() => void simulate("SUCCEEDED")}>Simulate successful payment</button><button type="button" disabled={busy} onClick={() => void simulate("FAILED")}>Simulate failed payment</button></div>}
       {options.sandbox && <p role="note">PayMongo sandbox — no real money is collected.</p>}
       {checkoutUrl && <p><a className="payment-link" href={checkoutUrl} target="_blank" rel="noopener noreferrer">Continue to GCash on PayMongo ↗</a></p>}
-      {!options.testMode && <p>Keep this booking page open while paying in the new tab. Return here to check confirmation.</p>}
+      {!options.testMode && <p>Keep this booking page open while paying in the new tab. Your appointment will confirm automatically after your payment is verified.</p>}
+      {!options.testMode && payment?.status === "PENDING" && <p role="status">Waiting for payment confirmation… Status updates automatically when you return to this booking tab.</p>}
       {!options.testMode && payment && <button type="button" disabled={busy} onClick={() => void checkPayment()}>Check payment status</button>}
     </> : options && <p>Contact the salon to pay the appointment fee before your hold expires. Online payment is not configured.</p>}
     {error && <p role="alert" className="error">{error}</p>}
@@ -62,11 +72,11 @@ export function FeePaymentHistory({ payments }: { payments: FeePayment[] }) {
 }
 function ReceiptDetails({ snapshot }: { snapshot?: Record<string, unknown> }) {
   if (!snapshot) return null;
-  return <dl>{["bookingCode", "customerName", "amount", "currency", "method", "paidAt"].map(key => <div key={key}><dt>{({ bookingCode: "Booking", customerName: "Customer", amount: "Amount", currency: "Currency", method: "Method", paidAt: "Paid at" } as Record<string, string>)[key]}</dt><dd>{String(snapshot[key] ?? "")}</dd></div>)}</dl>;
+  return <dl>{["bookingCode", "customerName", "amount", "currency", "method", "externalReference", "paidAt"].map(key => <div key={key}><dt>{({ bookingCode: "Booking", customerName: "Customer", amount: "Amount", currency: "Currency", method: "Method", externalReference: "Payment reference", paidAt: "Paid at" } as Record<string, string>)[key]}</dt><dd>{String(snapshot[key] ?? "")}</dd></div>)}</dl>;
 }
 type StaffBooking = { bookingCode: string; status: string; appointmentFeeAmount: string; customer: { firstName: string; lastName: string }; payments: FeePayment[] };
 type ReviewPayment = FeePayment & { provider: string; method: string; externalReference: string | null; reconciliationReason: string | null; appointment: { bookingCode: string; status: string } };
-export function PaymentsWorkspace({ admin }: { admin: boolean }) {
+export function PaymentsWorkspace({ admin, initialCode }: { admin: boolean; initialCode?: string }) {
   const [booking, setBooking] = useState<StaffBooking | null>(null);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
@@ -82,6 +92,7 @@ export function PaymentsWorkspace({ admin }: { admin: boolean }) {
     setReview(old => next ? [...old, ...result.payments] : result.payments); setCursor(result.nextCursor);
   }
   useEffect(() => { if (admin) void loadReview(undefined, onlyReview).catch(err => setError(message(err))); }, [admin, onlyReview]);
+  useEffect(() => { if (initialCode) void act(() => lookup(initialCode)); }, [initialCode]);
   async function act(work: () => Promise<void>) {
     if (sending.current) return;
     sending.current = true; setBusy(true); setError(""); setNotice("");
@@ -93,20 +104,19 @@ export function PaymentsWorkspace({ admin }: { admin: boolean }) {
     const data = new FormData(event.currentTarget);
     await act(async () => {
       const { payment } = await api<{ payment: FeePayment & { appointment: { status: string } } }>("/payments/manual", { method: "POST", body: JSON.stringify({ bookingCode: booking.bookingCode,
-        amount: booking.appointmentFeeAmount, currency: "PHP", method: String(data.get("method")), externalReference: String(data.get("reference")).trim(), idempotencyKey: key.current }) });
+        amount: booking.appointmentFeeAmount, currency: "PHP", method: String(data.get("method")), idempotencyKey: key.current }) });
       key.current = crypto.randomUUID();
       setNotice(`Payment recorded${payment.reconciliationStatus === "REQUIRED" ? " for reconciliation" : ""}. Booking status: ${payment.appointment.status.replaceAll("_", " ")}.`);
       await lookup(booking.bookingCode); if (admin) await loadReview();
     });
   }
-  return <section className="payments-workspace"><h2>Appointment-fee payments</h2><p>Record money already received using its original transaction or cash collection reference.</p>
+  return <section className="payments-workspace"><h2>Appointment-fee payments</h2><p>Record money already received. A salon payment reference is generated automatically and included on the receipt.</p>
     <form className="account-form" onSubmit={event => { event.preventDefault(); const code = String(new FormData(event.currentTarget).get("code")).trim(); void act(async () => { await lookup(code); key.current = crypto.randomUUID(); }); }}>
-      <label>Booking code<input name="code" required maxLength={100} /></label><button disabled={busy}>Find booking</button>
+      <label>Booking code<input name="code" required maxLength={100} defaultValue={initialCode} /></label><button disabled={busy}>Find booking</button>
     </form>
     {booking && <div className="account-form"><h3>{booking.bookingCode} · {booking.customer.firstName} {booking.customer.lastName}</h3><p>Status: {booking.status} · Appointment fee: PHP {booking.appointmentFeeAmount}</p>
       {booking.status !== "PENDING_PAYMENT" && <p>Recording a separate capture here will flag it for reconciliation and will not restore or confirm the booking.</p>}
       <form onSubmit={event => void record(event)} key={booking.bookingCode}><fieldset disabled={busy}><label>Payment method<select name="method"><option value="CASH">Cash</option><option value="GCASH">GCash</option><option value="OTHER">Other</option></select></label>
-        <label>Original collection / transaction reference<input name="reference" required maxLength={120} /></label>
         <label className="checkbox"><input type="checkbox" required /> I have verified receipt of PHP {booking.appointmentFeeAmount}.</label>
         <button className="primary" disabled={busy}>Record received appointment fee</button></fieldset></form>
       <FeePaymentHistory payments={booking.payments} />

@@ -6,6 +6,7 @@ import { createNotificationsService } from "./modules/notifications/notification
 
 const providers = configuredNotificationProviders(env);
 const service = createNotificationsService(prisma, {
+  smsPolicy: env.NOTIFICATION_SMS_POLICY, publicSiteUrl: env.PUBLIC_SITE_URL, bookingLinkSecret: env.JWT_SECRET,
   providers, timeZone: env.SALON_TIMEZONE, leaseMs: env.NOTIFICATION_LEASE_MS,
   timeoutMs: env.NOTIFICATION_TIMEOUT_MS, maxAttempts: env.NOTIFICATION_MAX_ATTEMPTS,
   retryBaseMs: env.NOTIFICATION_RETRY_BASE_MS, reminderHours: env.NOTIFICATION_REMINDER_HOURS,

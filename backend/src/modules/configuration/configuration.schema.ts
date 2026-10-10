@@ -52,3 +52,17 @@ export type ScheduleInput = z.infer<typeof scheduleSchema>;
 export type ClosureInput = z.infer<typeof closureSchema>;
 export type UnavailabilityInput = z.infer<typeof unavailabilitySchema>;
 export type PolicyInput = z.infer<typeof policySchema>;
+
+const imageUrl = z.url().max(2048).refine(value => {
+  const url = new URL(value);
+  return url.protocol === "https:" && !url.username && !url.password;
+}, "Use an HTTPS image URL without credentials.");
+export const staffPublicProfileSchema = z.object({
+  title: z.string().trim().min(1).max(100),
+  bio: z.string().trim().max(2000),
+  photoUrl: imageUrl.nullable(),
+  languages: z.array(z.string().trim().min(1).max(40)).max(10),
+  portfolio: z.array(z.object({ title: z.string().trim().min(1).max(100), imageUrl, caption: z.string().trim().max(300) }).strict()).max(8),
+  reviews: z.array(z.object({ author: z.string().trim().min(1).max(100), rating: z.number().int().min(1).max(5), text: z.string().trim().min(1).max(1000) }).strict()).max(10),
+}).strict();
+export type StaffPublicProfileInput = z.infer<typeof staffPublicProfileSchema>;

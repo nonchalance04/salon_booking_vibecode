@@ -121,3 +121,33 @@ test("enumeration stays within the salon date, supports exact times and DST days
   const bounds = policyBounds({ ...d, timeZone: "America/New_York", now: new Date("2026-03-07T12:00:00-05:00"), policy: { ...d.policy, advanceBookingDays: 1 } });
   assert.equal(bounds.latest.toISOString(), "2026-03-08T16:00:00.000Z");
 });
+
+test("available starts use quarter-hour intervals and round lead time up", () => {
+  const d = data();
+  const slots = calculateAvailability(input, d);
+  assert.equal(slots.length, 38);
+  assert.deepEqual(slots.slice(4, 8).map(s => s.startAt), ["09:00", "09:15", "09:30", "09:45"].map(t => at(t).toISOString()));
+  for (const slot of slots) {
+    const local = new Date(slot.startAt);
+    assert.equal(local.getUTCMinutes() % 15, 0);
+    assert.equal(local.getUTCSeconds(), 0);
+    assert.equal(local.getUTCMilliseconds(), 0);
+  }
+  d.now = new Date("2026-10-05T07:01:30+08:00");
+  assert.equal(calculateAvailability(input, d)[0]?.startAt, at("08:15").toISOString());
+  d.hours[0]!.startTime = clock("08:07");
+  d.now = at("07:00");
+  assert.equal(calculateAvailability(input, d)[0]?.startAt, at("08:15").toISOString());
+});
+
+test("quarter-hour availability excludes preparation buffers even after early completion", () => {
+  const d = data();
+  for (const status of ["CONFIRMED", "PENDING_PAYMENT", "COMPLETED"]) {
+    // A 09:00–09:30 service reserves the staff member through 09:45.
+    d.reservations = [reservation(status)];
+    const starts = calculateAvailability(specific, d).map(s => s.startAt);
+    assert.equal(starts.includes(at("09:30").toISOString()), false);
+    assert.equal(starts.includes(at("09:45").toISOString()), true);
+    assert.equal(calculateAvailability(input, d).find(s => s.startAt === at("09:30").toISOString())?.services[0]?.staffId, "b");
+  }
+});

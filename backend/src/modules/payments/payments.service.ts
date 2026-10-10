@@ -3,7 +3,7 @@ import { Prisma, type PrismaClient, type Payment, type Appointment } from "../..
 import { ApiError } from "../../shared/http.js";
 import { lockSalon, lockStaff, freshTime } from "../scheduling/coordination.js";
 import { coversReservation } from "../scheduling/coverage.js";
-import { validGuestToken } from "../appointments/appointments.security.js";
+import { validGuestAccess } from "../appointments/appointments.security.js";
 import type { PaymentProvider, VerifiedPayment } from "./payment-provider.js";
 import { TestPaymentProvider } from "./payment-provider.js";
 import { manualPaymentSchema, type ManualPaymentInput } from "./payments.schema.js";
@@ -44,7 +44,7 @@ async function authorize(tx: Tx, actorId: string, adminOnly = false) {
 }
 async function guest(db: Tx, bookingCode: string, token: string) {
   const row = await db.appointment.findUnique({ where: { bookingCode } });
-  const valid = validGuestToken(token, row?.guestAccessTokenHash ?? "0".repeat(64));
+  const valid = await validGuestAccess(db, token, row);
   if (!row || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "The booking code or private access token is incorrect.");
   return row;
 }
@@ -150,7 +150,7 @@ async function settle(tx: Tx, row: Awaited<ReturnType<typeof lockAppointment>>, 
       await tx.notificationQueue.create({ data: { appointmentId: row.id, customerId: row.customerId, eventType,
         channel: row.customer.email ? "EMAIL" : "SMS", recipient: row.customer.email ?? row.customer.phone,
         status: "PENDING", scheduledAt: decisionTime, payload: { schemaVersion: 1, bookingCode: row.bookingCode,
-          paymentId: payment.id, amount: updated.amount.toFixed(2), currency: updated.currency,
+          paymentId: payment.id, amount: updated.amount.toFixed(2), currency: updated.currency, startAt: row.startAt.toISOString(),
           appointmentStatus: confirm ? "CONFIRMED" : row.status === "PENDING_PAYMENT" && row.holdExpiresAt! < decisionTime ? "EXPIRED" : row.status,
           reconciliationRequired: !confirm } } });
     }

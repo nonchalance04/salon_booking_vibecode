@@ -1372,3 +1372,14 @@ External provider adapters
 ```
 
 The system intentionally favors a straightforward, maintainable architecture over unnecessary infrastructure complexity.
+
+## TextBee and appointment OTP access
+
+`AppointmentOtpService` owns code generation, digest comparison, durable rate limits, atomic consumption and appointment session issuance. `NotificationProvider` supplies the TextBee SMS transport. Controllers validate inputs and set/clear HttpOnly cookies. Guest service authorization accepts either the original private token or an unexpired appointment-scoped session; both retain existing booking/payment business rules. TextBee keys never enter frontend assets. See `TEXTBEE_SETUP.md`.
+
+
+### Public staff profiles
+
+Admin configuration exposes `PUT /api/configuration/staff/:id/profile` using the same admin authentication, origin checks, scheduling locks, transaction, and audit conventions as other staff changes. The strict profile schema bounds text and collection sizes, restricts image URLs to HTTPS without credentials, and accepts ratings from 1 to 5. It updates only `Staff.publicProfile`; basic staff edits preserve it.
+
+`GET /api/availability/staff` returns saved public profiles and derived counts of distinct completed appointments and clients where that staff member performed an active service. Staff phone numbers and commission data are excluded. Inactive staff remain hidden. The booking picker renders saved content, empty states for unpublished sections, and an illustrated fallback for unavailable portrait images. Testimonials are labeled as shared by the salon, rather than presented as independently verified reviews. Profile photos and portfolio images are externally hosted URLs; file upload/storage is not part of this editor.

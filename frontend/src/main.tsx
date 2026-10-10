@@ -3,12 +3,9 @@ import { createRoot } from "react-dom/client";
 import { api, type User } from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import "./style.css";
-import { Configuration } from "./configuration";
-import { AdminAppointments } from "./appointment-management";
-import { SettlementWorkspace } from "./settlement";
-import { Reports } from "./reports";
-import { PaymentsWorkspace } from "./payments";
+import { WorkspaceLayout } from "./workspace-layout";
 import { PublicSite } from "./public-site";
+import "./workspace-design.css";
 
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
 function Login() {
@@ -23,17 +20,22 @@ function Login() {
     catch (err) { setError(message(err)); }
     finally { setBusy(false); }
   }
-  return <main className="login-page">
-    <section className="intro"><a className="wordmark" href="/">CLIQUE<span>SALON</span></a>
-      <div><p className="eyebrow">THE SALON WORKSPACE</p><h1>A little care.<br />A beautiful day.</h1>
-      <p>Your place to keep the salon working together.</p></div><p className="intro-foot">Made for the people behind every appointment.</p></section>
-    <section className="login-panel"><div className="login-card"><p className="eyebrow">WELCOME BACK</p>
-      <h2>Sign in to your workspace</h2><p className="muted">Use your Admin or Cashier account to continue.</p>
-      <form onSubmit={submit}><label>Email address<input name="email" type="email" autoComplete="username" required maxLength={254} placeholder="you@example.com" /></label>
-        <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
+  return <main className="clique-login">
+    <section className="clique-login-card" aria-labelledby="login-title">
+      <div className="clique-login-heading"><a href="/" id="login-title">CLIQUE HAIRCUTTERS</a>
+        <p>Because you deserve more than just a beautiful look — you deserve a moment to relax, recharge, and feel your absolute best.</p></div>
+      <img className="clique-login-photo" src="https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=85" alt="A client enjoying a salon appointment" />
+      <form onSubmit={submit} className="clique-login-form">
+        <h1>Sign in to your workspace</h1>
+        <label>Email address<input name="email" type="email" autoComplete="username" required maxLength={254} placeholder="you@example.com" /></label>
+        <label>Password<input name="password" type="password" autoComplete="current-password" required placeholder="Password" /></label>
         {error && <p role="alert" className="error">{error}</p>}
-        <button disabled={busy} className="primary">{busy ? "Signing in…" : "Sign in →"}</button>
-      </form><p><a href="/availability">Find an available salon time →</a></p><p><a href="/help">Questions? Ask the salon guide →</a></p><p className="help">Need access? Ask your salon administrator.</p></div></section>
+        <button disabled={busy} className="primary">{busy ? "Signing in…" : "Sign In"}</button>
+        <p className="clique-login-help">Need access or a password reset? Ask your salon administrator.</p>
+        <a href="/availability">Find an available salon time →</a>
+        <a href="/help">Questions? Ask the salon guide →</a>
+      </form>
+    </section>
   </main>;
 }
 
@@ -96,15 +98,7 @@ function Accounts() {
 }
 
 function Workspace() {
-  const { user, logout } = useAuth();
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [page, setPage] = useState<"accounts" | "configuration" | "payments" | "appointments" | "settlement" | "reports">("configuration");
-  return <div className="workspace"><header><a className="wordmark" href="/">CLIQUE<span>SALON</span></a><div className="user-menu"><span>{user?.firstName} · {user?.role === "ADMIN" ? "Admin" : "Cashier"}</span><button disabled={busy} onClick={async () => { setBusy(true); try { await logout(); } catch (err) { setError(message(err)); } finally { setBusy(false); } }}>Sign out</button></div></header>
-    <main className="workspace-main"><p className="eyebrow">YOUR WORKSPACE</p><h1>Hello, {user?.firstName}.</h1><p className="welcome">Welcome to Clique Salon.</p>
-      {error && <p role="alert" className="error">{error}</p>}
-      {user?.role === "ADMIN" ? <><nav className="workspace-tabs" aria-label="Admin workspace"><button aria-current={page === "reports" ? "page" : undefined} onClick={() => setPage("reports")}>Reports & audit</button><button aria-current={page === "settlement" ? "page" : undefined} onClick={() => setPage("settlement")}>Outcomes & commissions</button><button aria-current={page === "configuration" ? "page" : undefined} onClick={() => setPage("configuration")}>Salon management</button><button aria-current={page === "accounts" ? "page" : undefined} onClick={() => setPage("accounts")}>Accounts</button><button aria-current={page === "payments" ? "page" : undefined} onClick={() => setPage("payments")}>Appointment fees</button><button aria-current={page === "appointments" ? "page" : undefined} onClick={() => setPage("appointments")}>Appointments</button></nav>{page === "reports" ? <Reports admin /> : page === "settlement" ? <SettlementWorkspace admin /> : page === "appointments" ? <AdminAppointments /> : page === "configuration" ? <Configuration /> : page === "payments" ? <PaymentsWorkspace admin /> : <Accounts />}</> : <><nav className="workspace-tabs" aria-label="Cashier workspace"><button onClick={() => setPage("reports")}>Collections</button><button onClick={() => setPage("settlement")}>Service settlement</button><button onClick={() => setPage("payments")}>Appointment fees</button></nav>{page === "reports" ? <Reports admin={false} /> : page === "payments" ? <PaymentsWorkspace admin={false} /> : <SettlementWorkspace admin={false} />}</>}
-    </main><footer>Clique Salon · Workspace</footer></div>;
+  return <WorkspaceLayout accounts={<Accounts />} />;
 }
 function App() {
   const { user, loading, error, refresh } = useAuth();

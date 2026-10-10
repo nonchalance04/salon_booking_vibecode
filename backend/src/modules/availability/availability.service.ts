@@ -9,10 +9,21 @@ export function createAvailabilityService(prisma: PrismaClient, timeZone: string
   return {
     async catalog() {
       const staff = await prisma.staff.findMany({ where: { isActive: true }, select: {
-        id: true, firstName: true, lastName: true,
+        id: true, firstName: true, lastName: true, publicProfile: true,
         staffServices: { where: { isActive: true, service: { isActive: true } }, select: { serviceId: true } },
       }, orderBy: { id: "asc" } });
-      return { timeZone, staff: staff.map(({ staffServices, ...row }) => ({ ...row, serviceIds: staffServices.map(q => q.serviceId) })) };
+      const counts = await prisma.$queryRaw<{ staffId: string; appointmentsCompleted: number; clientsServed: number }[]>`
+        SELECT s."staffId", COUNT(DISTINCT a.id)::int AS "appointmentsCompleted",
+          COUNT(DISTINCT a."customerId")::int AS "clientsServed"
+        FROM "AppointmentService" s JOIN "Appointment" a ON a.id = s."appointmentId"
+        JOIN "Staff" staff ON staff.id = s."staffId"
+        WHERE staff."isActive" = true AND a.status = 'COMPLETED'
+          AND s."membershipStatus" = 'ACTIVE' AND s.outcome = 'PERFORMED'
+        GROUP BY s."staffId"`;
+      const statistics = new Map(counts.map(row => [row.staffId, { appointmentsCompleted: row.appointmentsCompleted, clientsServed: row.clientsServed }]));
+      return { timeZone, staff: staff.map(({ staffServices, ...row }) => ({ ...row,
+        statistics: statistics.get(row.id) ?? { appointmentsCompleted: 0, clientsServed: 0 },
+        serviceIds: staffServices.map(q => q.serviceId) })) };
     },
     async search(input: AvailabilityInput) {
       const day = localDay(input.date, timeZone);

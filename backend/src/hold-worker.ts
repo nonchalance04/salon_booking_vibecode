@@ -1,3 +1,4 @@
+import { pruneAppointmentAccess } from "./modules/appointments/appointment-otp.service.js";
 import { prisma, disconnectDatabase } from "./database/prisma.js";
 import { env } from "./config/env.js";
 import { createAppointmentsService } from "./modules/appointments/appointments.service.js";
@@ -8,7 +9,13 @@ const payments = createPaymentsService(prisma, configuredPaymentProvider(env), e
 let stopping = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let running: Promise<void> | undefined;
+let nextAccessCleanup = 0;
 async function tick() {
+  if (Date.now() >= nextAccessCleanup) {
+    nextAccessCleanup = Date.now() + 3600000;
+    try { await pruneAppointmentAccess(prisma); }
+    catch { console.error(JSON.stringify({ level: "error", event: "appointment_access_cleanup_failed" })); }
+  }
   try { await service.expireHolds(); }
   catch { console.error(JSON.stringify({ level: "error", event: "hold_expiration_failed" })); }
   try { await payments.synchronizeExpired(1); }

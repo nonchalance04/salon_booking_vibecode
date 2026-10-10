@@ -1,3 +1,4 @@
+import { createAppointmentOtpRouter } from "../modules/appointments/appointment-otp.routes.js";
 import { Router } from "express";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { AuthConfig } from "../modules/auth/auth.security.js";
@@ -29,6 +30,7 @@ export function createApiRouter(prisma: PrismaClient, config: AuthConfig) {
   router.use(createChatbotRouter(prisma, config));
   router.use(createSettlementRouter(prisma, config));
   router.use(createPaymentsRouter(prisma, config));
+  router.use(createAppointmentOtpRouter(prisma, config));
   router.use(createAppointmentsRouter(prisma, config));
   router.use(createAvailabilityRouter(prisma, config.SALON_TIMEZONE));
   router.use(createAuthRouter(prisma, config));

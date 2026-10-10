@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
-type Collections = { timeZone: string; basis: string; totals: { currency: string; captured: string; refunded: string; netCashMovement: string; successfulApplied: string; successfulUnapplied: string; reconciliationRequired: string }[]; breakdown: Record<string, unknown>[] };
+type Collections = { timeZone: string; basis: string; totals: { currency: string; captured: string; refunded: string; netCashMovement: string; successfulApplied: string; successfulUnapplied: string; reconciliationRequired: string }[]; methodTotals: Record<string, unknown>[]; typeTotals: Record<string, unknown>[]; breakdown: Record<string, unknown>[] };
 type Report = { rows: Record<string, unknown>[]; total: number; page: number; pageSize: number; dateBasis: string; timeZone: string };
 type Dashboard = { appointments: { status: string; count: number }[]; finalizedCommissions: string; commissionCount: number };
 const label = (key: string) => key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, s => s.toUpperCase());
@@ -16,9 +16,9 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
   const columns = Object.keys(rows[0]).filter(k => k !== "id");
   return <div className="table-wrap"><table><thead><tr>{columns.map(c => <th key={c}>{label(c)}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={String(row.id ?? i)}>{columns.map(c => <td key={c}>{typeof row[c] === "object" && row[c] !== null ? <details><summary>View details</summary><Value value={row[c]} /></details> : <Value value={row[c]} />}</td>)}</tr>)}</tbody></table></div>;
 }
-export function Reports({ admin }: { admin: boolean }) {
+export function Reports({ admin, initialKind = "appointments" }: { admin: boolean; initialKind?: string }) {
   const [from, setFrom] = useState(""); const [to, setTo] = useState("");
-  const [kind, setKind] = useState("appointments"); const [collections, setCollections] = useState<Collections | null>(null);
+  const [kind, setKind] = useState(initialKind); const [collections, setCollections] = useState<Collections | null>(null);
   const [report, setReport] = useState<Report | null>(null); const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   // Initialize using the configured salon timezone, rather than the browser's date.
@@ -41,7 +41,7 @@ export function Reports({ admin }: { admin: boolean }) {
     <form className="account-form" onSubmit={submit}><div className="form-grid"><label>From<input type="date" required value={from} disabled={busy} onChange={e => { setFrom(e.target.value); clear(); }} /></label><label>Through<input type="date" required value={to} min={from} disabled={busy} onChange={e => { setTo(e.target.value); clear(); }} /></label>
     {admin && <label>Report<select value={kind} disabled={busy} onChange={e => { setKind(e.target.value); clear(); }}>{["appointments", "payments", "receipts", "commissions", "audit"].map(k => <option key={k} value={k}>{label(k)}</option>)}</select></label>}</div><button className="primary" disabled={busy}>{busy ? "Loading…" : "Run report"}</button></form>
     {error && <p role="alert" className="error">{error}</p>}
-    {collections && <><h3>Collections</h3><p>{collections.basis} Timezone: {collections.timeZone}.</p><DataTable rows={collections.totals} /><p>Successful applied and unapplied amounts describe current payment status. Reconciliation required is a subset, not an additional collection.</p><details><summary>Collection breakdown by payment type and method</summary><DataTable rows={collections.breakdown} /></details></>}
+    {collections && <><h3>Collections</h3><p>{collections.basis} Timezone: {collections.timeZone}.</p><DataTable rows={collections.totals} /><p>Successful applied and unapplied amounts describe current payment status. Reconciliation required is a subset, not an additional collection.</p><h3>Cash, GCash & other collections</h3><DataTable rows={collections.methodTotals} /><h3>Appointment fees & service payment captures</h3><DataTable rows={collections.typeTotals} /><details><summary>Collection breakdown by payment type and method</summary><DataTable rows={collections.breakdown} /></details></>}
     {dashboard && <><h3>Appointment activity</h3><p>Counts use scheduled start dates and current status. Finalized commissions in period: PHP {dashboard.finalizedCommissions} ({dashboard.commissionCount} records).</p><DataTable rows={dashboard.appointments} /></>}
     {report && <><h3>{label(kind)}</h3><p>{report.total} records · Date basis: {report.dateBasis}. Timestamps in details use ISO format with UTC offsets.</p><DataTable rows={report.rows} /><div className="actions"><button disabled={busy || report.page <= 1} onClick={() => void load(report.page - 1)}>Previous</button><span>Page {report.page} of {Math.max(1, Math.ceil(report.total / report.pageSize))}</span><button disabled={busy || report.page * report.pageSize >= report.total} onClick={() => void load(report.page + 1)}>Next</button></div></>}
   </section>;

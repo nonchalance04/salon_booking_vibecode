@@ -59,6 +59,7 @@ model Customer {
 }
 
 model Staff {
+  publicProfile Json?
   id        String   @id @default(uuid()) @db.Uuid
   firstName String
   lastName  String
@@ -215,6 +216,8 @@ enum AppointmentCompletionType {
 }
 
 model Appointment {
+  otpChallenges AppointmentOtpChallenge[]
+  guestSessions AppointmentGuestSession[]
   id                             String                     @id @default(uuid()) @db.Uuid
   bookingCode                    String                     @unique
   customerId                     String                     @db.Uuid
@@ -498,6 +501,7 @@ enum NotificationChannel {
 }
 
 enum NotificationStatus {
+  SKIPPED
   PENDING
   PROCESSING
   SENT
@@ -539,4 +543,34 @@ model SalonProfile {
   address   String
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// Short-lived access data; never store raw OTPs, session tokens, or phone numbers here.
+model AppointmentOtpChallenge {
+  id String @id @db.Uuid
+  appointmentId String? @db.Uuid
+  identityKey String
+  codeHash String
+  attempts Int @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  @@index([identityKey, createdAt])
+  @@index([expiresAt])
+}
+
+model AppointmentGuestSession {
+  tokenHash String @id
+  appointmentId String @db.Uuid
+  expiresAt DateTime @db.Timestamptz(3)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  @@index([expiresAt])
+}
+
+model AppointmentOtpRate {
+  key String @id
+  count Int
+  expiresAt DateTime @db.Timestamptz(3)
+  @@index([expiresAt])
 }
