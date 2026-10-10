@@ -1,6 +1,6 @@
 import type { createConfigurationService } from "../configuration/configuration.service.js";
 type Configuration = ReturnType<typeof createConfigurationService>;
-type Source = { [K in "publicSalon" | "publicServices" | "publicPolicy"]: () => Promise<Awaited<ReturnType<Configuration[K]>>> };
+export type ChatbotSource = { [K in "publicSalon" | "publicServices" | "publicPolicy"]: () => Promise<Awaited<ReturnType<Configuration[K]>>> };
 export function chatbotTopic(message: string) {
   const text = message.toLowerCase();
   if (/\b(cancel|cancellation|refund)\b/.test(text)) return "cancel";
@@ -13,14 +13,14 @@ export function chatbotTopic(message: string) {
   return "help";
 }
 // Read-only guidance. No generated availability, private appointment lookup, or mutations.
-export function createChatbotService(source: Source) {
+export function createChatbotService(source: ChatbotSource) {
   return { async answer(message: string) {
     const topic = chatbotTopic(message);
     const links = [{ label: "Find a time and book", href: "/availability" }, { label: "Manage my appointment", href: "/appointment" }];
     let answer: string;
     switch (topic) {
       case "services": {
-        const services = await source.publicServices();
+        const services = (await source.publicServices()).filter(s => s.price.gt(0));
         answer = services.length ? services.map(s => `${s.name}: PHP ${s.price.toFixed(2)}, ${s.durationMinutes} minutes.${s.description ? ` ${s.description}` : ""}`).join("\n") : "No services are currently listed. Please contact the salon.";
         break;
       }

@@ -1,0 +1,7 @@
+.salon-guide .chat-history { display: grid; gap: 1.5rem; margin-top: 1.5rem; }
+.salon-guide .chat-history > section { min-width: 0; overflow-wrap: anywhere; }
+.salon-guide .chat-answer { white-space: pre-wrap; }
+.salon-guide .chat-recommendation { border: 1px solid #c6a770; border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }
+.salon-guide .chat-recommendation h3 { margin-top: 0; }
+.salon-guide .chat-recommendation .text-link { display: inline-block; padding: .5rem 0; }
+.salon-guide .workspace-tabs { flex-wrap: wrap; }

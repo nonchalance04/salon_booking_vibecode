@@ -623,12 +623,15 @@ live-delivery acceptance.
   remain forbidden to Cashiers even if a browser or stale token claims Admin access.
 - Guest: open `/help` (also linked from booking and guest appointment screens) for
   services/prices, opening information, current policies and booking/change guidance.
-  The initial assistant is guided and works without an external AI account. It does
-  not perform bookings, reserve slots, accept tokens or retain conversation history.
+  Guided mode works without an external AI account. Optional Gemini consultation
+  uses the salon Markdown guidelines and temporary conversation context to ask
+  follow-ups and recommend bookable services. It does not perform bookings or
+  persist chat history. See [Gemini setup](docs/GEMINI_CHATBOT_SETUP.md).
 - APIs: `GET /api/reports/collections`, Admin `GET /api/reports/dashboard` and
   `/api/reports/{appointments,payments,receipts,commissions,audit}`. Supply `from` and
   `to` as inclusive salon-local `YYYY-MM-DD` dates (at most 366 days), plus optional
-  `page` and `pageSize` (maximum 100). `POST /api/chatbot` accepts `{ "message": "Opening hours" }`.
+  `page` and `pageSize` (maximum 100). `POST /api/chatbot` accepts `{ "message": "Opening hours" }`
+  and optional bounded `history` pairs with `role` (`user`/`model`) and `text`.
 - Collection captures use payment `paidAt`; refunds use `refundedAt`. Net cash movement
   is not profit. Applied/unapplied and reconciliation columns describe current status;
   reconciliation is a subset. Carried credits never generate new collections. Payment

@@ -10,6 +10,10 @@ export const envSchema = z.object({
       url.hostname.length > 0 && url.pathname.length > 1;
   }, "A PostgreSQL URL with a database name is required."),
   JWT_SECRET: z.string().trim().min(32),
+  CHATBOT_PROVIDER: z.enum(["guided", "gemini"]).default("guided"),
+  GEMINI_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).optional()),
+  GEMINI_MODEL: z.preprocess(v => v === "" ? undefined : v, z.string().trim().regex(/^[A-Za-z0-9._-]+$/).optional()),
+  CHATBOT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(15000),
   NOTIFICATION_EMAIL_PROVIDER: z.enum(["disabled", "test", "resend"]).default("disabled"),
   NOTIFICATION_SMS_PROVIDER: z.enum(["disabled", "test", "philsms", "textbee"]).default("disabled"),
   APPOINTMENT_OTP_PROVIDER: z.enum(["disabled", "textbee"]).default("disabled"),
@@ -46,6 +50,11 @@ export const envSchema = z.object({
     }), "Provide exact HTTP(S) origins, separated by commas."),
   COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
 }).superRefine((value, context) => {
+  if (value.CHATBOT_PROVIDER === "gemini") {
+    for (const field of ["GEMINI_API_KEY", "GEMINI_MODEL"] as const) {
+      if (!value[field]) context.addIssue({ code: "custom", path: [field], message: "Gemini configuration is required." });
+    }
+  }
   if (value.PUBLIC_SITE_URL) {
     const url = new URL(value.PUBLIC_SITE_URL);
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== "/" ||

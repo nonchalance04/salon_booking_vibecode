@@ -195,8 +195,10 @@ cannot own the same live attempt, and worker crashes have tested recovery paths.
 
 ## Phase 10 — Reports and customer assistance
 
-**Status:** Implemented with a guided assistant; automated checks pass. External AI is
-not configured. Browser acceptance is deferred; see `PHASE_10_VERIFICATION.md` and
+**Status:** Implemented with guided mode and optional Gemini consultation using
+Markdown guidelines and temporary context. Live Gemini credentials/model verification
+remain a deployment step; see `GEMINI_CHATBOT_SETUP.md`. Broader browser acceptance
+is tracked in `PHASE_10_VERIFICATION.md` and
 `ACCEPTANCE_BACKLOG.md` A10.
 
 - Implement authorized appointment, payment, receipt, commission, and permitted collection reports using historical transactional records.
