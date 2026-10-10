@@ -69,7 +69,7 @@ export function AppointmentManagement({ appointment, token, onChange }: { appoin
   return <section aria-label="Manage appointment"><h3>Manage your appointment</h3>
     <p>{appointment.rescheduleCount} of {policy.maxReschedules} allowed changes used.</p>
     {appointment.carriedAppointmentFeePaymentId && <p>Appointment fee satisfied by credit from the missed booking. No additional appointment-fee payment is due.</p>}
-    {appointment.recoveryAppointment && <p>Replacement booking: {appointment.recoveryAppointment.bookingCode}. Use the replacement’s saved private link to manage it.</p>}
+    {appointment.recoveryAppointment && <p>Replacement booking: {appointment.recoveryAppointment.bookingCode}. Verify your phone number on Your appointment to manage the replacement booking.</p>}
     {canChange && !editing && <button disabled={busy} onClick={() => void open()}>{recovery ? "Request a recovery booking" : "Reschedule or change services"}</button>}
     {canCancel && <button disabled={busy} onClick={() => setConfirmCancel(true)}>Cancel appointment</button>}
     {!canChange && !canCancel && !appointment.recoveryAppointment && <p>No customer changes are currently available. Please contact the salon for assistance.</p>}
@@ -162,7 +162,7 @@ export function AdminAppointments({ initialFilters = {}, onPayment, onSettlement
       {current.status === "PENDING_PAYMENT" && current.holdExpiresAt && <p>Payment hold {Date.parse(current.holdExpiresAt) < Date.parse(current.serverTime) ? "expired" : "expires"} at {new Intl.DateTimeFormat("en-PH", { timeZone: current.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(current.holdExpiresAt))}.</p>}
       <div className="actions">{onPayment && <button disabled={busy} onClick={() => onPayment(current.bookingCode)}>Review appointment fee</button>}{onSettlement && ["CONFIRMED", "COMPLETED"].includes(current.status) && <button className="primary" disabled={busy} onClick={() => onSettlement(current.bookingCode)}>{current.status === "COMPLETED" ? "View settlement / receipt" : "Settle services"}</button>}
       {current.status === "CONFIRMED" && Date.parse(current.startAt) <= Date.parse(current.serverTime) && <button disabled={busy} onClick={() => setMarking(current.bookingCode)}>Mark no-show</button>}</div>
-      {current.status === "CONFIRMED" && <p className="admin-note muted">Rescheduling uses the customer’s private booking link and the booking’s original policy. Changes used: {current.rescheduleCount} / {current.bookingPolicyVersion.maxReschedules}.</p>}
+      {current.status === "CONFIRMED" && <p className="admin-note muted">Rescheduling follows the booking’s original policy. Changes used: {current.rescheduleCount} / {current.bookingPolicyVersion.maxReschedules}.</p>}
       {marking === current.bookingCode && <div className="admin-warning"><p>Confirm the customer failed to appear according to salon procedure. This releases the reservation and preserves the missed visit.</p><div className="actions"><button disabled={busy} onClick={() => void mark(current.bookingCode)}>Confirm no-show</button><button disabled={busy} onClick={() => setMarking(null)}>Keep confirmed</button></div></div>}
     </article>}
   </section>;

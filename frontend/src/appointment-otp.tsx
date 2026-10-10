@@ -21,14 +21,14 @@ export function AppointmentOtp({ onVerified }: { onVerified: (appointment: Appoi
     void api<{ available: boolean }>("/appointments/otp/options").then(async options => {
       if (!active) return;
       setAvailable(options.available);
-      if (!options.available) return;
+      if (!options.available) { setError("SMS verification is unavailable. Try again later or contact the salon."); return; }
       try {
         const result = await api<{ appointment: Appointment }>("/appointments/otp/session");
         if (active) verified.current(result.appointment);
       } catch (err) {
         if (active && !(err instanceof ApiError && err.status === 401)) setError("Could not restore your visit. You can request a new code below.");
       }
-    }).catch(() => { if (active) setError("SMS verification is unavailable. Use your private booking link or try again later."); });
+    }).catch(() => { if (active) setError("SMS verification is unavailable. Try again later or contact the salon."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {

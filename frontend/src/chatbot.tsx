@@ -1,43 +1,93 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { chatbotHistory } from "./chatbot-history";
+import { readChatSession, saveChatSession, type ChatReply } from "./chatbot-session";
 import "./chatbot.css";
-type Reply = { mode?: string; notice?: string; answer: string; links: { label: string; href: string }[];
-  recommendations?: { id: string; name: string; description: string | null; price: string; durationMinutes: number; reason: string; href: string }[] };
+
 const price = (value: string) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(value));
+const topics = [
+  { icon: "✧", title: "Find my service", detail: "A little guidance for your next visit", question: "Help me choose a service" },
+  { icon: "☷", title: "Services & prices", detail: "Explore treatments and pricing", question: "Services and prices" },
+  { icon: "◷", title: "Plan my visit", detail: "Opening hours and booking help", question: "Opening hours" },
+];
+
 export function Chatbot({ embedded = false }: { embedded?: boolean } = {}) {
-  const [history, setHistory] = useState<{ question: string; reply: Reply }[]>([]);
-  const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const [savedSession] = useState(readChatSession);
+  const [history, setHistory] = useState(savedSession.history);
+  const [message, setMessage] = useState(savedSession.draft);
+  const [pending, setPending] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const submitting = useRef(false);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const transcript = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    saveChatSession({ history, draft: message || pending });
+  }, [history, message, pending]);
+
+  useEffect(() => {
+    const region = transcript.current;
+    if (region) region.scrollTo({ top: region.scrollHeight, behavior: "instant" });
+  }, [history, pending, error]);
+  useEffect(() => {
+    if (!busy && (history.length > 0 || error)) input.current?.focus({ preventScroll: true });
+  }, [busy, history.length, error]);
+  useEffect(() => {
+    if (input.current) {
+      input.current.style.height = "auto";
+      input.current.style.height = `${Math.min(input.current.scrollHeight, 120)}px`;
+    }
+  }, [message]);
+
   async function ask(question: string) {
-    if (!question.trim() || submitting.current) return;
+    const trimmed = question.trim();
+    if (!trimmed || submitting.current) return;
     submitting.current = true;
-    setBusy(true); setError("");
-    try { const reply = await api<Reply>("/chatbot", { method: "POST", body: JSON.stringify({ message: question, history: chatbotHistory(history) }) }); setHistory(h => [...h.slice(-19), { question, reply }]); setMessage(""); }
-    catch (err) { setError(err instanceof Error ? err.message : "Please try again."); }
-    finally { submitting.current = false; setBusy(false); }
+    setBusy(true); setError(""); setPending(trimmed); setMessage("");
+    try {
+      const reply = await api<ChatReply>("/chatbot", { method: "POST", body: JSON.stringify({ message: trimmed, history: chatbotHistory(history) }) });
+      setHistory(h => [...h.slice(-19), { question: trimmed, reply }]);
+      setPending("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Please try again.");
+    } finally { submitting.current = false; setBusy(false); }
   }
   function submit(e: FormEvent) { e.preventDefault(); void ask(message); }
-  return <section className={embedded ? "container page-section salon-guide" : "workspace-main"}>{!embedded && <a className="wordmark" href="/">CLIQUE<span>SALON</span></a>}<p className="eyebrow">SALON GUIDANCE</p><h1 className="section-title">How can we help?</h1>
-    <p>Tell us about your hair, nail, beauty or spa concern, or ask about salon services and policies. AI-assisted answers may ask follow-up questions before recommending a service.</p>
-    <p className="muted">When AI consultation is enabled, your messages and recent conversation are sent to Google Gemini. This chat keeps its history only while this page is open. Keep appointment references, guest tokens, verification codes and payment details private.</p>
-    <nav className="workspace-tabs" aria-label="Suggested questions">{["Help me choose a service", "Services and prices", "Opening hours", "Booking policies", "How to book", "Reschedule", "Cancel"].map(q => <button key={q} disabled={busy} onClick={() => void ask(q)}>{q}</button>)}</nav>
-    {history.length > 0 && <button disabled={busy} onClick={() => { setHistory([]); setMessage(""); setError(""); }}>Start a new conversation</button>}
-    <div className="chat-history" aria-live="polite" aria-busy={busy}>{history.map((h, i) => <section className="account-form" key={i}>
-      <h2>{h.question}</h2>
-      <p className="muted">{h.reply.mode === "gemini" ? "AI-assisted salon consultation" : "Salon guide"}</p>
-      {h.reply.notice && <p role="status">{h.reply.notice}</p>}
-      <p className="chat-answer">{h.reply.answer}</p>
-      {h.reply.recommendations?.map(service => <article className="chat-recommendation" key={service.id}>
-        <p className="eyebrow">RECOMMENDED SERVICE</p><h3>{service.name}</h3><p>{service.reason}</p>
-        {service.description && <p>{service.description}</p>}
-        <p><strong>{price(service.price)}</strong> · Estimated duration: {service.durationMinutes} minutes</p>
-        <a className="text-link" href={service.href}>Book this service →</a>
-      </article>)}
-      <div className="actions">{h.reply.links.map(l => <a key={l.href} href={l.href}>{l.label} →</a>)}</div>
-    </section>)}</div>
-    {error && <p role="alert" className="error">{error}</p>}
-    <form className="account-form" onSubmit={submit}><label>Your question<input value={message} onChange={e => setMessage(e.target.value)} required maxLength={1000} disabled={busy} /></label><button className="primary" disabled={busy}>{busy ? "Looking up salon information…" : "Ask"}</button></form>
-    <p><a href="/availability">Find a time and book →</a> · <a href="/appointment">Manage my appointment →</a></p>
+  function reset() {
+    setHistory([]); setPending(""); setMessage(""); setError(""); input.current?.focus();
+  }
+  return <section className={`salon-guide chat-page${embedded ? " container" : " workspace-main"}`} aria-labelledby="chat-title">
+    {!embedded && <a className="wordmark" href="/">CLIQUE<span>SALON</span></a>}
+    <div className="chat-page-heading"><div><p className="eyebrow">A LITTLE GUIDANCE, JUST FOR YOU</p><h1 id="chat-title">Your next good hair day<br />starts here.</h1><p>Explore services, plan your visit, or find a little beauty inspiration.</p></div><a className="chat-book-link" href="/availability">Book a visit <span aria-hidden="true">↗</span></a></div>
+    <div className="chat-layout">
+      <aside className="chat-sidebar" aria-label="Salon guide shortcuts">
+        <div className="chat-sidebar-intro"><span className="chat-emblem" aria-hidden="true">✧</span><h2>Let’s find your<br />kind of care.</h2><p>From a fresh look to a moment of calm. We’ll help you get started.</p></div>
+        <p className="chat-label">EXPLORE WITH US</p>
+        <div className="chat-topics">{topics.map(topic => <button key={topic.title} disabled={busy} onClick={() => void ask(topic.question)}><span className="chat-topic-icon" aria-hidden="true">{topic.icon}</span><span><strong>{topic.title}</strong><small>{topic.detail}</small></span><span aria-hidden="true">↗</span></button>)}</div>
+        <div className="chat-visit"><p className="chat-label">ALREADY HAVE AN APPOINTMENT?</p><a href="/appointment">Manage your booking <span aria-hidden="true">↗</span></a><p>View, reschedule, or cancel your visit.</p></div>
+      </aside>
+      <div className="chat-panel">
+        <div className="chat-panel-heading"><div className="chat-assistant-identity"><span className="chat-avatar" aria-hidden="true">✧</span><div><strong>Clique salon guide</strong><small>AI-assisted service guidance</small></div></div><button className="chat-reset" onClick={reset} disabled={busy || (!history.length && !pending)} aria-label="Start a new conversation"><span aria-hidden="true">＋</span> New chat</button></div>
+        <div className="chat-transcript" ref={transcript} role="log" aria-label="Conversation" aria-live="polite" tabIndex={0}>
+          <div className="chat-welcome"><span className="chat-welcome-icon" aria-hidden="true">✧</span><p className="chat-label">WELCOME TO YOUR SALON GUIDE</p><h2>What can we help you with?</h2><p>Tell us what you have in mind. A new look, a specific concern, or simply some time for yourself.</p></div>
+          {history.length === 0 && !pending && <div className="chat-starters">{["Help me choose a service", "How to book", "Booking policies"].map(q => <button key={q} onClick={() => void ask(q)} disabled={busy}>{q} <span aria-hidden="true">↗</span></button>)}</div>}
+          {history.map((h, i) => <div className="chat-turn" key={i}>
+            <div className="chat-user-message"><span className="chat-message-label">YOU</span><p>{h.question}</p></div>
+            <div className="chat-assistant-message"><span className="chat-message-label">{h.reply.mode === "gemini" ? "CLIQUE · AI-ASSISTED" : "CLIQUE · SALON GUIDE"}</span>
+              {h.reply.notice && <p className="chat-notice">{h.reply.notice}</p>}
+              <p className="chat-answer">{h.reply.answer}</p>
+              {h.reply.recommendations?.map(service => <article className="chat-recommendation" key={service.id}><p className="chat-label">A LITTLE SOMETHING FOR YOU</p><h3>{service.name}</h3><p>{service.reason}</p>{service.description && <p className="chat-service-description">{service.description}</p>}<div className="chat-service-meta"><strong>{price(service.price)}</strong><span>~ {service.durationMinutes} min</span></div><a href={service.href}>Book this service <span aria-hidden="true">↗</span></a></article>)}
+              {h.reply.links.length > 0 && <div className="chat-reply-links">{h.reply.links.map(l => <a key={l.href} href={l.href}>{l.label} <span aria-hidden="true">↗</span></a>)}</div>}
+            </div>
+          </div>)}
+          {pending && <div className="chat-user-message"><span className="chat-message-label">YOU</span><p>{pending}</p></div>}
+          {busy && <div className="chat-thinking" role="status"><span aria-hidden="true"><i /><i /><i /></span> Finding a little guidance…</div>}
+          {error && <div className="chat-error" role="alert"><strong>We couldn’t get a reply.</strong><p>{error}</p><button onClick={() => void ask(pending)} disabled={busy}>Try again</button></div>}
+        </div>
+        <div className="chat-composer-area"><form onSubmit={submit} className="chat-composer"><label className="sr-only" htmlFor="chat-question">Your question</label><textarea ref={input} id="chat-question" rows={1} value={message} onChange={e => setMessage(e.target.value)} placeholder="How can we help?" required maxLength={1000} disabled={busy} aria-describedby="chat-input-hint" onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!busy) void ask(message); } }} /><button type="submit" aria-label="Send message" disabled={busy || !message.trim()}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v15" /></svg></button></form><div className="chat-composer-hint" id="chat-input-hint"><span>Enter to send · Shift + Enter for a new line</span><span>{message.length} / 1,000</span></div></div>
+      </div>
+    </div>
+    <details className="chat-privacy"><summary>About this guide & your privacy</summary><p>AI-assisted answers may ask follow-up questions before recommending a service. When AI consultation is enabled, your messages and recent conversation are sent to Google Gemini. Your conversation and unsent message are saved in this browser tab as you move between pages or refresh. Use New chat to clear them, or close this tab to end the session. Keep appointment references, guest tokens, verification codes and payment details private.</p></details>
   </section>;
 }

@@ -78,7 +78,6 @@ export function AppointmentView({ initial, token: initialToken }: { initial: App
     return () => clearInterval(timer);
   }, [appointment.bookingCode, token]);
   const format = (value: string) => new Intl.DateTimeFormat(undefined, { timeZone: appointment.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-  const privateLink = `${window.location.origin}/appointment#${new URLSearchParams({ code: appointment.bookingCode, token })}`;
   const date = (value: string) => new Intl.DateTimeFormat("en-PH", { timeZone: appointment.timeZone, weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(value));
   const time = (value: string) => new Intl.DateTimeFormat("en-PH", { timeZone: appointment.timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(value));
   const money = (value: string | number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(value));
@@ -106,7 +105,6 @@ export function AppointmentView({ initial, token: initialToken }: { initial: App
         <FeePaymentControls bookingCode={appointment.bookingCode} token={token} onChange={refresh} pending={appointment.payments?.find(p => p.status === "PENDING")} />
       </section>}
       {!!appointment.payments?.length && <div className="reservation-card reservation-history"><FeePaymentHistory payments={appointment.payments} /></div>}
-      {token && <section className="reservation-card reservation-access"><p className="booking-kicker">KEEP YOUR BOOKING CLOSE</p><h3>Save your private link</h3><p className="muted">Return to this link to view and manage your appointment.</p><label>Private booking link<input readOnly value={privateLink} onFocus={e => e.currentTarget.select()} /></label><p className="muted reservation-footnote">Anyone with this link can access your booking. Keep it private.</p></section>}
     </aside></div>
     <footer className="reservation-footer"><p className="muted">Check the latest booking and payment updates.</p><button type="button" onClick={() => void refresh()}>Refresh status ↻</button></footer>
     {error && <p role="alert" className="error">{error}</p>}
@@ -164,12 +162,8 @@ export function GuestAppointment({ embedded = false }: { embedded?: boolean } = 
         {!token && <button type="button" onClick={() => { void api("/appointments/otp/logout", { method: "POST" }).then(() => { setResult(null); setCredentials({ bookingCode: "", token: "" }); }).catch(err => setError(message(err))); }}>Close appointment</button>}
       </> : <>
         {(!credentials.token || Boolean(error)) && <AppointmentOtp onVerified={appointment => { requestGeneration.current++; setToken(""); setResult(appointment); setError(""); }} />}
-        <details open={Boolean(credentials.token)}><summary>Use a private booking link or access token</summary><form key={credentials.bookingCode} className="account-form" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void retrieve(String(data.get("code")).trim(), String(data.get("token")).trim()); }}>
-        <p>Open your saved private booking link, or enter your booking code and private access token below.</p>
-        <p className="muted">If you just returned from PayMongo, return to your original booking tab or reopen your private link. Your payment will be verified automatically.</p>
-        <label>Booking code<input name="code" required defaultValue={credentials.bookingCode} /></label>
-        <label>Private access token<input name="token" type="password" required autoComplete="off" defaultValue={credentials.token} /></label>
-        <button disabled={busy}>{busy ? "Loading…" : "View appointment"}</button>
-      </form></details></>}{error && <p role="alert" className="error">{error}</p>}
+        {busy && <p role="status">Loading your appointment…</p>}
+        <p className="muted">If you just returned from PayMongo, return to your original booking tab or verify your phone number above. Your payment will be verified automatically.</p>
+      </>}{error && <p role="alert" className="error">{error}</p>}
     </section></div>;
 }

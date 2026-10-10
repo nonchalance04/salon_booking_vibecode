@@ -8,7 +8,7 @@ Staff profiles do not provide login accounts.
 
 1. Open `/availability`, select services in visit order, staff preference and date.
 2. Choose a time and submit contact details. A temporary hold is not confirmation.
-3. Save the private booking link. Its token grants access; never post it publicly.
+3. Keep your booking code. To reopen appointment details, use Your appointment and verify the phone number used when booking; SMS appointment links also open details automatically.
 4. Pay the appointment fee through the configured checkout or salon collection
    procedure before the hold expires. Refresh and verify CONFIRMED.
 5. Use the private link to reschedule or cancel while eligible under the booking's
