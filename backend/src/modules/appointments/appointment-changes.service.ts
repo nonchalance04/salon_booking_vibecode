@@ -125,7 +125,7 @@ async function lockAppointment(tx: Tx, bookingCode: string, token?: string) {
   await tx.$queryRaw`SELECT id FROM "Appointment" WHERE "bookingCode" = ${bookingCode} FOR UPDATE`;
   const row = await tx.appointment.findUnique({ where: { bookingCode }, include });
   const valid = token === undefined || await validGuestAccess(tx, token, row);
-  if (!row || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "The booking code or private access token is incorrect.");
+  if (!row || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "Unable to access this appointment. Verify your phone number on Your appointment or contact the salon.");
   if (row.appointmentServices.some(s => !lockedIds.includes(s.staffId))) throw new RestartReservation();
   return { row, lockedIds };
 }

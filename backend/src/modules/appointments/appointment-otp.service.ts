@@ -30,7 +30,7 @@ async function rate(tx: Prisma.TransactionClient, key: string, limit: number, no
 export function createAppointmentOtpService(prisma: PrismaClient, secret: string, provider?: NotificationProvider) {
   return {
     async request(bookingCode: string, rawPhone: string, ip: string) {
-      if (!provider) throw new ApiError(503, "OTP_DISABLED", "SMS verification is unavailable. Use your private booking link or contact the salon.");
+      if (!provider) throw new ApiError(503, "OTP_DISABLED", "SMS verification is unavailable. Try again later or contact the salon.");
       const normalized = phone(rawPhone);
       const identityKey = otpDigest(secret, "identity", `${bookingCode}:${normalized ?? rawPhone}`);
       const id = randomUUID(), code = String(randomInt(0, 1_000_000)).padStart(6, "0");

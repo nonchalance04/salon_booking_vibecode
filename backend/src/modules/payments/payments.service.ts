@@ -45,7 +45,7 @@ async function authorize(tx: Tx, actorId: string, adminOnly = false) {
 async function guest(db: Tx, bookingCode: string, token: string) {
   const row = await db.appointment.findUnique({ where: { bookingCode } });
   const valid = await validGuestAccess(db, token, row);
-  if (!row || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "The booking code or private access token is incorrect.");
+  if (!row || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "Unable to access this appointment. Verify your phone number on Your appointment or contact the salon.");
   return row;
 }
 async function lockAppointment(tx: Tx, id: string) {

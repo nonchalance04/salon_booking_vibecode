@@ -117,7 +117,7 @@ export function createAppointmentsService(prisma: PrismaClient, timeZone: string
         const record = await tx.appointment.findUnique({ where: { bookingCode }, select: { ...guestSelect, guestAccessTokenHash: true } });
         // Use the same response for missing appointments and incorrect credentials.
         const valid = await validGuestAccess(tx, token, record);
-        if (!record || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "The booking code or private access token is incorrect.");
+        if (!record || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "Unable to access this appointment. Verify your phone number on Your appointment or contact the salon.");
         const { guestAccessTokenHash: _hash, ...row } = record;
         return { appointment: guestView(row, await freshTime(tx), timeZone) };
       });
